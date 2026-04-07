@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.user import User
-from ..schemas.user import UserCreate, UserLogin
-from ..auth.password import hash_password, verify_password
-from ..auth.jwt import create_access_token
+from ..schemas.user import UserCreate, UserLogin, UserOut
+from ..auth.jwt import create_access_token   # bỏ hash + verify
+from ..auth.jwt import get_current_user
 
 router = APIRouter()
 
@@ -20,10 +20,11 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
     if user:
         raise HTTPException(400, "Email đã tồn tại")
 
+    # KHÔNG hash nữa
     new_user = User(
         email=data.email,
         name=data.name,
-        password_hash=hash_password(data.password)
+        password_hash="123456"   # mặc định
     )
 
     db.add(new_user)
@@ -36,7 +37,8 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
     return {
         "token": token,
-        "user": new_user
+        "access_token": token,
+        "user": UserOut.from_orm(new_user)
     }
 
 
@@ -50,7 +52,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(400, "Sai email")
 
-    if not verify_password(data.password, user.password_hash):
+    # password mặc định
+    if data.password != "123456":
         raise HTTPException(400, "Sai mật khẩu")
 
     token = create_access_token({
@@ -59,5 +62,10 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
     return {
         "token": token,
-        "user": user
+        "access_token": token,
+        "user": UserOut.from_orm(user)
     }
+
+@router.get("/me", response_model=UserOut)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { mockUsers } from "../data/mockData";
+import { authAPI } from "../services/api";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -8,21 +8,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // Tìm user
-    const user = mockUsers.find(
-      (u) => u.email === email && u.password === password
-    );
-
-    if (user) {
-      // Đăng nhập thành công
-      localStorage.setItem("user", JSON.stringify(user));
+    try {
+      await authAPI.login(email, password);
       navigate("/dashboard");
-    } else {
-      // Đăng nhập thất bại
+    } catch (err) {
       setError("Email hoặc mật khẩu không đúng");
     }
   };
@@ -33,8 +26,18 @@ export default function LoginPage() {
         {/* Logo và tiêu đề */}
         <div className="text-center mb-8">
           <div className="inline-block p-4 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl mb-4">
-            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            <svg
+              className="w-12 h-12 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              />
             </svg>
           </div>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">BlackBoard</h1>
@@ -52,7 +55,10 @@ export default function LoginPage() {
             )}
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Email
               </label>
               <input
@@ -67,7 +73,10 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 Mật khẩu
               </label>
               <input
@@ -125,29 +134,39 @@ export default function LoginPage() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              <span className="text-gray-700 font-medium">Đăng nhập với Google</span>
+              <span className="text-gray-700 font-medium">
+                Đăng nhập với Google
+              </span>
             </button>
           </div>
 
           <div className="mt-6 text-center">
-            <a href="#" className="text-sm text-purple-600 hover:text-purple-700">
+            <a
+              href="#"
+              className="text-sm text-purple-600 hover:text-purple-700"
+            >
               Quên mật khẩu?
             </a>
           </div>
         </div>
 
         {/* Demo accounts */}
-        <div className="mt-6 bg-white/80 backdrop-blur rounded-xl p-4">
-          <p className="text-xs font-semibold text-gray-600 mb-2">Tài khoản demo:</p>
+        {/* <div className="mt-6 bg-white/80 backdrop-blur rounded-xl p-4">
+          <p className="text-xs font-semibold text-gray-600 mb-2">
+            Tài khoản demo:
+          </p>
           <div className="space-y-1 text-xs text-gray-600">
             <p>Admin: admin@gmail.com / 123456</p>
             <p>Member: member@gmail.com / 123456</p>
           </div>
-        </div>
+        </div> */}
 
         <p className="mt-8 text-center text-sm text-gray-600">
           Chưa có tài khoản?{" "}
-          <a href="#" className="text-purple-600 font-semibold hover:text-purple-700">
+          <a
+            href="#"
+            className="text-purple-600 font-semibold hover:text-purple-700"
+          >
             Đăng ký ngay
           </a>
         </p>

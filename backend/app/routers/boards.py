@@ -59,6 +59,27 @@ def get_boards(
     return boards
 
 
+# get board by id
+@router.get("/{board_id}")
+def get_board(
+    board_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+
+    board = db.query(Board)\
+        .join(BoardMember)\
+        .filter(
+            Board.id == board_id,
+            BoardMember.user_id == user.id
+        ).first()
+
+    if not board:
+        raise HTTPException(404)
+
+    return board
+
+
 # update board
 @router.put("/{board_id}")
 def update_board(

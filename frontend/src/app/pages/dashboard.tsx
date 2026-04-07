@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { boards as initialBoards, workspaces, users } from "../data/mockData";
+import { boardsAPI, userAPI, workspacesAPI } from "../services/api";
 import {
   Search,
   Plus,
@@ -14,34 +14,55 @@ import {
   User,
   X,
 } from "lucide-react";
+import { Workspace } from "../../types/workspace";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const workspace = workspaces[0];
+  const [workspace, setWorkspace] = useState<any>(null);
+  const [boards, setBoards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Load user từ localStorage
   const [currentUser, setCurrentUser] = useState<any>(null);
+
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
-    } else {
-      navigate("/login");
-    }
+    const loadUser = async () => {
+      try {
+        const user = await userAPI.me();
+        setCurrentUser(user);
+      } catch (err) {
+        navigate("/login");
+      }
+    };
+
+    loadUser();
   }, [navigate]);
 
-  // Load boards từ localStorage
-  const [boards, setBoards] = useState(() => {
-    const saved = localStorage.getItem("blackboard_boards");
-    return saved ? JSON.parse(saved) : initialBoards;
-  });
-
-  // Save boards to localStorage when changed
+  // Load workspaces và boards từ API
   useEffect(() => {
-    localStorage.setItem("blackboard_boards", JSON.stringify(boards));
-  }, [boards]);
+    const loadData = async () => {
+      if (!currentUser) return;
+
+      try {
+        const workspacesData = await workspacesAPI.getWorkspaces();
+        if (workspacesData.length > 0) {
+          setWorkspace(workspacesData[0]);
+          const boardsData = await boardsAPI.getBoardsByWorkspace(
+            workspacesData[0].id,
+          );
+          setBoards(boardsData);
+        }
+      } catch (error) {
+        console.error("Failed to load data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [currentUser]);
 
   // State cho modal tạo board
   const [showCreateBoardModal, setShowCreateBoardModal] = useState(false);
@@ -73,19 +94,22 @@ export default function DashboardPage() {
   ];
 
   // Hàm tạo board mới
-  const handleCreateBoard = () => {
-    if (!newBoardName.trim()) return;
+  const handleCreateBoard = async () => {
+    if (!newBoardName.trim() || !workspace) return;
 
-    const newBoard = {
-      id: `board-${Date.now()}`,
-      name: newBoardName,
-      workspaceId: selectedWorkspace,
-      background: selectedBackground,
-    };
+    try {
+      const newBoard = await boardsAPI.createBoard({
+        name: newBoardName,
+        workspace_id: workspace.id,
+        background: selectedBackground,
+      });
 
-    setBoards([...boards, newBoard]);
-    setNewBoardName("");
-    setShowCreateBoardModal(false);
+      setBoards([...boards, newBoard]);
+      setNewBoardName("");
+      setShowCreateBoardModal(false);
+    } catch (error) {
+      console.error("Failed to create board:", error);
+    }
   };
 
   // Hàm logout
@@ -95,6 +119,13 @@ export default function DashboardPage() {
   };
 
   if (!currentUser) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-purple-50">
+        <p className="text-gray-700">Đang tải dữ liệu...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-purple-50 via-white to-blue-50">
@@ -155,13 +186,16 @@ export default function DashboardPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-400 rounded-lg flex items-center justify-center text-white font-semibold text-sm">
-                {workspace.name.charAt(0)}
+                {workspace?.name ? workspace.name.charAt(0) : "W"}
               </div>
               <span className="text-sm font-medium text-gray-700 flex-1 truncate">
-                {workspace.name}
+                {workspace?.name ?? "Chưa có không gian làm việc"}
               </span>
             </div>
-            <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm">
+            <button
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm"
+              disabled={!workspace}
+            >
               <Users size={16} />
               <span>Thành viên</span>
             </button>
@@ -199,7 +233,8 @@ export default function DashboardPage() {
             <div className="flex items-center gap-4 ml-6">
               <button
                 onClick={() => setShowCreateBoardModal(true)}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#051836] text-white rounded-lg font-medium hover:shadow-lg transition"
+                disabled={!workspace}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition ${workspace ? "bg-[#051836] text-white hover:shadow-lg" : "bg-gray-300 text-gray-500 cursor-not-allowed"}`}
               >
                 <Plus size={20} />
                 <span>Tạo mới</span>
@@ -212,8 +247,8 @@ export default function DashboardPage() {
                   className="w-10 h-10 rounded-full overflow-hidden border-2 border-purple-200 hover:border-purple-400 transition"
                 >
                   <img
-                    src={currentUser.avatar}
-                    alt={currentUser.name}
+                    src={currentUser.avatar ?? "/images/default-avatar.png"}
+                    alt={currentUser.name ?? "User"}
                     className="w-full h-full object-cover"
                   />
                 </button>
@@ -224,8 +259,10 @@ export default function DashboardPage() {
                     <div className="p-4 border-b border-gray-200">
                       <div className="flex items-center gap-3">
                         <img
-                          src={currentUser.avatar}
-                          alt={currentUser.name}
+                          src={
+                            currentUser.avatar ?? "/images/default-avatar.png"
+                          }
+                          alt={currentUser.name ?? "User"}
                           className="w-12 h-12 rounded-full"
                         />
                         <div className="flex-1">
@@ -317,7 +354,7 @@ export default function DashboardPage() {
           )}
 
           {/* Recent activity */}
-          <div className="mt-12">
+          {/* <div className="mt-12">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               Hoạt động gần đây
             </h2>
@@ -374,7 +411,7 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
       </main>
 
@@ -445,7 +482,7 @@ export default function DashboardPage() {
                   onChange={(e) => setSelectedWorkspace(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  {workspaces.map((ws) => (
+                  {workspace.map((ws: Workspace) => (
                     <option key={ws.id} value={ws.id}>
                       {ws.name}
                     </option>

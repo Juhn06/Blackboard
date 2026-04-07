@@ -1,93 +1,108 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models.list import List
-from ..schemas.list import ListCreate, ListUpdate
+from ..models.workspace import Workspace
+from ..schemas.workspace import WorkspaceCreate
 from ..auth.deps import get_current_user
 
 router = APIRouter()
 
 
-# tạo list
+# tạo workspace
 @router.post("/")
-def create_list(
-    data: ListCreate,
+def create_workspace(
+    data: WorkspaceCreate,
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
 
-    last = db.query(List)\
-        .filter(List.board_id == data.board_id)\
-        .order_by(List.position.desc())\
-        .first()
-
-    position = 0 if not last else last.position + 1
-
-    new_list = List(
-        title=data.title,
-        board_id=data.board_id,
-        position=position
+    workspace = Workspace(
+        name=data.name,
+        owner_id=user.id
     )
 
-    db.add(new_list)
+    db.add(workspace)
     db.commit()
-    db.refresh(new_list)
+    db.refresh(workspace)
 
-    return new_list
+    return workspace
 
 
-# lấy list theo board
-@router.get("/board/{board_id}")
-def get_lists(
-    board_id: int,
+# lấy workspaces của user
+@router.get("/")
+def get_workspaces(
     db: Session = Depends(get_db),
     user=Depends(get_current_user)
 ):
 
-    lists = db.query(List)\
-        .filter(List.board_id == board_id)\
-        .order_by(List.position)\
-        .all()
+    workspaces = db.query(Workspace).filter(
+        Workspace.owner_id == user.id
+    ).all()
 
-    return lists
+    return workspaces
 
 
-# update list
-@router.put("/{list_id}")
-def update_list(
-    list_id: int,
-    data: ListUpdate,
-    db: Session = Depends(get_db)
+# lấy workspace theo id
+@router.get("/{workspace_id}")
+def get_workspace(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
 ):
 
-    list_item = db.query(List).filter(
-        List.id == list_id
+    workspace = db.query(Workspace).filter(
+        Workspace.id == workspace_id,
+        Workspace.owner_id == user.id
     ).first()
 
-    if data.title is not None:
-        list_item.title = data.title
+    if not workspace:
+        raise HTTPException(404)
 
-    if data.position is not None:
-        list_item.position = data.position
+    return workspace
+
+
+# update workspace
+@router.put("/{workspace_id}")
+def update_workspace(
+    workspace_id: int,
+    data: WorkspaceCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
+):
+
+    workspace = db.query(Workspace).filter(
+        Workspace.id == workspace_id,
+        Workspace.owner_id == user.id
+    ).first()
+
+    if not workspace:
+        raise HTTPException(404)
+
+    workspace.name = data.name
 
     db.commit()
 
-    return list_item
+    return workspace
 
 
-# delete list
-@router.delete("/{list_id}")
-def delete_list(
-    list_id: int,
-    db: Session = Depends(get_db)
+# delete workspace
+@router.delete("/{workspace_id}")
+def delete_workspace(
+    workspace_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user)
 ):
 
-    list_item = db.query(List).filter(
-        List.id == list_id
+    workspace = db.query(Workspace).filter(
+        Workspace.id == workspace_id,
+        Workspace.owner_id == user.id
     ).first()
 
-    db.delete(list_item)
+    if not workspace:
+        raise HTTPException(404)
+
+    db.delete(workspace)
     db.commit()
 
-    return {"message": "deleted"}
+    return {"message": "Workspace deleted"}

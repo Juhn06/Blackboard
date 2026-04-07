@@ -7,14 +7,7 @@ import {
   ReactPortal,
 } from "react";
 import { useParams, useNavigate } from "react-router";
-import {
-  boards,
-  lists as initialLists,
-  cards as initialCards,
-  users,
-  type List,
-  type Card,
-} from "../data/mockData";
+import { boardsAPI, listsAPI, cardsAPI } from "../services/api";
 import {
   Star,
   Share2,
@@ -28,22 +21,49 @@ import {
   ListChecks,
   Inbox,
 } from "lucide-react";
+import { List } from "../../types/list";
 
 export default function BoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const board = boards.find((b) => b.id === id);
 
-  // State cho lists và cards - load từ localStorage hoặc mock data
-  const [lists, setLists] = useState(() => {
-    const saved = localStorage.getItem("blackboard_lists");
-    return saved ? JSON.parse(saved) : initialLists;
-  });
+  const boardId = Number(id);
 
-  const [cards, setCards] = useState(() => {
-    const saved = localStorage.getItem("blackboard_cards");
-    return saved ? JSON.parse(saved) : initialCards;
-  });
+  const [board, setBoard] = useState<any>(null);
+  const [lists, setLists] = useState<any[]>([]);
+  const [cards, setCards] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load data từ API
+  useEffect(() => {
+    const loadData = async () => {
+      if (!id) return;
+
+      try {
+        // Load board info
+        const boardData = await boardsAPI.getBoard(boardId);
+        setBoard(boardData);
+
+        const listsData = await listsAPI.getListsByBoard(boardId.toString());
+        setLists(listsData);
+
+        // Load cards cho tất cả lists
+        const allCards: any[] = [];
+        for (const list of listsData) {
+          const cardsData = await cardsAPI.getCardsByList(list.id.toString());
+          allCards.push(...cardsData);
+        }
+        setCards(allCards);
+      } catch (error) {
+        console.error("Failed to load board data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [id]);
 
   // State cho messages
   const [messages, setMessages] = useState([
@@ -126,39 +146,42 @@ export default function BoardPage() {
   };
 
   // Hàm thêm list mới
-  const handleAddList = () => {
-    if (!newListTitle.trim()) return;
+  const handleAddList = async () => {
+    if (!newListTitle.trim() || !board) return;
 
-    const newList = {
-      id: `list-${Date.now()}`,
-      boardId: id!,
-      title: newListTitle,
-      position: lists.length + 1,
-    };
+    try {
+      const newList = await listsAPI.createList({
+        title: newListTitle,
+        board_id: board.id,
+        position: lists.length + 1,
+      });
 
-    setLists([...lists, newList]);
-    setNewListTitle("");
-    setShowAddList(false);
+      setLists([...lists, newList]);
+      setNewListTitle("");
+      setShowAddList(false);
+    } catch (error) {
+      console.error("Failed to create list:", error);
+    }
   };
 
   // Hàm thêm card mới
-  const handleAddCard = (listId: string) => {
+  const handleAddCard = async (listId: string) => {
     if (!newCardTitle.trim()) return;
 
-    const newCard = {
-      id: `card-${Date.now()}`,
-      listId: listId,
-      title: newCardTitle,
-      description: "",
-      dueDate: null,
-      dueTime: null,
-      labels: [],
-      completed: false,
-    };
+    try {
+      const newCard = await cardsAPI.createCard({
+        title: newCardTitle,
+        list_id: parseInt(listId),
+        description: "",
+        completed: false,
+      });
 
-    setCards([...cards, newCard]);
-    setNewCardTitle("");
-    setAddingCardToList(null);
+      setCards([...cards, newCard]);
+      setNewCardTitle("");
+      setAddingCardToList(null);
+    } catch (error) {
+      console.error("Failed to create card:", error);
+    }
   };
 
   // Hàm xác định màu card theo trạng thái - SỬA LOGIC

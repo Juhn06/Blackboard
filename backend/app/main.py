@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-from .database import engine
+from .database import engine, SessionLocal
 from .models import (
     user,
     workspace,
@@ -11,6 +12,7 @@ from .models import (
     comment,
     board_note
 )
+from .auth.password import hash_password
 
 from .routers import (
     auth,
@@ -30,6 +32,26 @@ list.Base.metadata.create_all(bind=engine)
 card.Base.metadata.create_all(bind=engine)
 comment.Base.metadata.create_all(bind=engine)
 board_note.Base.metadata.create_all(bind=engine)
+
+# seed admin user
+def seed_admin():
+    db: Session = SessionLocal()
+    try:
+        admin_user = db.query(user.User).filter(user.User.email == "admin@gmail.com").first()
+        if not admin_user:
+            hashed_password = hash_password("123456")
+            admin = user.User(
+                email="admin@gmail.com",
+                name="Admin",
+                password_hash=hashed_password
+            )
+            db.add(admin)
+            db.commit()
+            print("Admin user created: admin@gmail.com / 123456")
+    finally:
+        db.close()
+
+seed_admin()
 
 app = FastAPI()
 
