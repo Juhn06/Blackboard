@@ -16,7 +16,6 @@ class UserOut(BaseModel):
     id: int
     email: str
     name: str
-    avatar: Optional[str]
     phone: Optional[str]
 
     class Config:

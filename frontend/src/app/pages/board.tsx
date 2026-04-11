@@ -27,7 +27,9 @@ export default function BoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  // Use numeric boardId for comparisons with API responses
   const boardId = Number(id);
+  console.log("🔍 Current board ID:", boardId, "from route param:", id);
 
   const [board, setBoard] = useState<any>(null);
   const [lists, setLists] = useState<any[]>([]);
@@ -46,14 +48,26 @@ export default function BoardPage() {
         setBoard(boardData);
 
         const listsData = await listsAPI.getListsByBoard(boardId.toString());
+        console.log("✅ Lists loaded from API:", listsData);
+        console.log("📋 First list structure:", listsData[0]);
         setLists(listsData);
+        console.log("📋 Lists state updated with", listsData.length, "lists");
 
         // Load cards cho tất cả lists
         const allCards: any[] = [];
         for (const list of listsData) {
           const cardsData = await cardsAPI.getCardsByList(list.id.toString());
+          console.log(
+            `🃏 Loaded ${cardsData.length} cards for list ${list.id}`,
+          );
           allCards.push(...cardsData);
         }
+        console.log(
+          "✅ Cards loaded from API:",
+          allCards.length,
+          "total cards",
+        );
+        console.log("🃏 First card structure:", allCards[0]);
         setCards(allCards);
       } catch (error) {
         console.error("Failed to load board data:", error);
@@ -88,12 +102,15 @@ export default function BoardPage() {
   ]);
 
   const [newMessage, setNewMessage] = useState("");
-  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const [selectedCard, setSelectedCard] = useState<number | null>(null);
+  const [showCardModal, setShowCardModal] = useState(false);
   const [showAddList, setShowAddList] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [addingCardToList, setAddingCardToList] = useState<string | null>(null);
   const [newCardTitle, setNewCardTitle] = useState("");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
+  const [creatingList, setCreatingList] = useState(false);
+  // const [creatingList, setCreatingList] = useState(false);
 
   // State cho toggle panels
   const [showNotes, setShowNotes] = useState(true);
@@ -110,14 +127,24 @@ export default function BoardPage() {
   }, [cards]);
 
   const boardLists = lists
-    .filter((l: { boardId: string | undefined }) => l.boardId === id)
+    .filter((l: { board_id?: number; boardId?: string }) => {
+      // FIX: API returns board_id (number), compare with numeric boardId
+      const listBoardId = l.board_id ?? l.boardId;
+      const numericBoardId = Number(boardId);
+      const match = listBoardId === numericBoardId;
+
+      if (!match && lists.length > 0) {
+        console.warn(
+          `⚠️  List filter mismatch - list.board_id: ${listBoardId}, current boardId: ${numericBoardId}`,
+        );
+      }
+      return match;
+    })
     .sort(
       (a: { position: number }, b: { position: number }) =>
         a.position - b.position,
     );
-  const selectedCardData = cards.find(
-    (c: { id: string | null }) => c.id === selectedCard,
-  );
+  const selectedCardData = cards.find((c) => c.id === selectedCard);
 
   if (!board) {
     return (
@@ -138,7 +165,11 @@ export default function BoardPage() {
   }
 
   const getCardsForList = (listId: string) => {
-    return cards.filter((c: { listId: string }) => c.listId === listId);
+    const filtered = cards.filter((card) => card.list_id === Number(listId));
+    console.log(
+      `🃏 getCardsForList(${listId}): found ${filtered.length} cards`,
+    );
+    return filtered;
   };
 
   const getUserById = (userId?: string) => {
@@ -147,40 +178,84 @@ export default function BoardPage() {
 
   // Hàm thêm list mới
   const handleAddList = async () => {
-    if (!newListTitle.trim() || !board) return;
+    if (!newListTitle.trim()) {
+      alert("Vui lòng nhập tiêu đề danh sách");
+      return;
+    }
 
+    if (!board) {
+      alert("Bảng chưa tải. Vui lòng thử lại.");
+      return;
+    }
+
+    setCreatingList(true);
     try {
       const newList = await listsAPI.createList({
-        title: newListTitle,
-        board_id: board.id,
-        position: lists.length + 1,
+        title: newListTitle.trim(),
+        board_id: Number(board.id),
       });
 
-      setLists([...lists, newList]);
+      // DEBUG: Log API response to verify structure
+      console.log("✅ API Response:", newList);
+      console.log("Expected board_id:", Number(board.id));
+      console.log("Received board_id:", newList.board_id);
+
+      // Update lists state with new list using functional update
+      setLists((prevLists) => {
+        const updated = [...prevLists, newList];
+        console.log("📋 Updated lists state:", updated);
+        return updated;
+      });
+
+      // Reset form and close add list UI AFTER state is updated
       setNewListTitle("");
       setShowAddList(false);
     } catch (error) {
-      console.error("Failed to create list:", error);
+      console.error("❌ Failed to create list:", error);
+      alert("Có lỗi xảy ra khi tạo danh sách. Vui lòng thử lại.");
+    } finally {
+      setCreatingList(false);
     }
   };
 
   // Hàm thêm card mới
   const handleAddCard = async (listId: string) => {
-    if (!newCardTitle.trim()) return;
+    console.log("🃏 handleAddCard called with listId:", listId);
+    console.log("🃏 newCardTitle:", newCardTitle);
+
+    if (!newCardTitle.trim()) {
+      console.log("🃏 Title is empty, returning");
+      alert("Vui lòng nhập tiêu đề thẻ");
+      return;
+    }
 
     try {
-      const newCard = await cardsAPI.createCard({
-        title: newCardTitle,
+      console.log("🃏 Calling API with:", {
+        title: newCardTitle.trim(),
         list_id: parseInt(listId),
-        description: "",
-        completed: false,
       });
 
-      setCards([...cards, newCard]);
+      const newCard = await cardsAPI.createCard({
+        title: newCardTitle.trim(),
+        list_id: parseInt(listId),
+      });
+
+      console.log("🃏 API response:", newCard);
+
+      // Update cards state with new card using functional update
+      setCards((prevCards) => {
+        const updated = [...prevCards, newCard];
+        console.log("🃏 Cards state updated, new length:", updated.length);
+        return updated;
+      });
+
+      // Reset form and close add card UI
       setNewCardTitle("");
       setAddingCardToList(null);
+      console.log("🃏 Form reset and UI closed");
     } catch (error) {
-      console.error("Failed to create card:", error);
+      console.error("❌ Failed to create card:", error);
+      alert("Có lỗi xảy ra khi tạo thẻ. Vui lòng thử lại.");
     }
   };
 
@@ -210,12 +285,22 @@ export default function BoardPage() {
   };
 
   // Hàm cập nhật card
-  const updateCard = (cardId: string, updates: any) => {
-    setCards(
-      cards.map((c: { id: string }) =>
-        c.id === cardId ? { ...c, ...updates } : c,
-      ),
-    );
+  const handleUpdateCard = async (cardId: number, updates: any) => {
+    try {
+      const updatedCard = await cardsAPI.updateCard(cardId.toString(), updates);
+
+      // Update cards state with updated card using functional update
+      setCards((prevCards) =>
+        prevCards.map((card) =>
+          card.id === cardId ? { ...card, ...updatedCard } : card,
+        ),
+      );
+
+      console.log("✅ Card updated:", updatedCard);
+    } catch (error) {
+      console.error("❌ Failed to update card:", error);
+      alert("Có lỗi xảy ra khi cập nhật thẻ. Vui lòng thử lại.");
+    }
   };
 
   // Hàm thêm message
@@ -278,19 +363,6 @@ export default function BoardPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Member avatars */}
-            <div className="flex -space-x-2">
-              {users.slice(0, 3).map((user) => (
-                <img
-                  key={user.id}
-                  src={user.avatar}
-                  alt={user.name}
-                  className="w-8 h-8 rounded-full border-2 border-white"
-                  title={user.name}
-                />
-              ))}
-            </div>
-
             <button className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition">
               <Share2 size={18} />
               <span className="font-medium">Chia sẻ</span>
@@ -425,9 +497,9 @@ export default function BoardPage() {
                               {card.title}
                             </p>
                             <div className="flex items-center gap-2">
-                              {card.dueTime && (
+                              {card.due_time && (
                                 <span className="text-xs text-gray-600">
-                                  {card.dueTime}
+                                  {card.due_time}
                                 </span>
                               )}
                               {/* {card.labels.length > 0 && (
@@ -499,85 +571,29 @@ export default function BoardPage() {
 
                         {/* Cards */}
                         <div className="space-y-2 mb-3">
-                          {listCards.map(
-                            (card: {
-                              assignee: string | undefined;
-                              id:
-                                | string
-                                | number
-                                | bigint
-                                | ((prevState: string | null) => string | null)
-                                | null
-                                | undefined;
-                              labels: any[];
-                              title:
-                                | string
-                                | number
-                                | bigint
-                                | boolean
-                                | ReactElement<
-                                    unknown,
-                                    string | JSXElementConstructor<any>
-                                  >
-                                | Iterable<ReactNode>
-                                | ReactPortal
-                                | Promise<
-                                    | string
-                                    | number
-                                    | bigint
-                                    | boolean
-                                    | ReactPortal
-                                    | ReactElement<
-                                        unknown,
-                                        string | JSXElementConstructor<any>
-                                      >
-                                    | Iterable<ReactNode>
-                                    | null
-                                    | undefined
-                                  >
-                                | null
-                                | undefined;
-                              dueDate: string;
-                              dueTime:
-                                | string
-                                | number
-                                | bigint
-                                | boolean
-                                | ReactElement<
-                                    unknown,
-                                    string | JSXElementConstructor<any>
-                                  >
-                                | Iterable<ReactNode>
-                                | ReactPortal
-                                | Promise<
-                                    | string
-                                    | number
-                                    | bigint
-                                    | boolean
-                                    | ReactPortal
-                                    | ReactElement<
-                                        unknown,
-                                        string | JSXElementConstructor<any>
-                                      >
-                                    | Iterable<ReactNode>
-                                    | null
-                                    | undefined
-                                  >
-                                | null
-                                | undefined;
-                            }) => {
-                              const assignee = getUserById(card.assignee);
-                              const cardStyles = getCardStyles(card);
+                          {listCards.map((card: any) => {
+                            const cardStyles = getCardStyles(card);
 
-                              return (
-                                <button
-                                  key={String(card.id)}
-                                  onClick={() =>
-                                    setSelectedCard(String(card.id))
-                                  }
-                                  className={`w-full rounded-lg border p-3 shadow-sm hover:shadow-md transition text-left group ${cardStyles}`}
-                                >
-                                  {/* Labels
+                            return (
+                              <button
+                                key={String(card.id)}
+                                onClick={() => setSelectedCard(card.id)}
+                                onDoubleClick={() => {
+                                  console.log(
+                                    "🃏 Double-clicked card:",
+                                    card.id,
+                                  );
+                                  setSelectedCard(card.id);
+                                  setShowCardModal(true);
+                                  console.log(
+                                    "🃏 Set selectedCard to:",
+                                    card.id,
+                                    "showCardModal to: true",
+                                  );
+                                }}
+                                className={`w-full rounded-lg border p-3 shadow-sm hover:shadow-md transition text-left group ${cardStyles}`}
+                              >
+                                {/* Labels
                                   {card.labels.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mb-2">
                                       {card.labels.map((label) => (
@@ -591,45 +607,35 @@ export default function BoardPage() {
                                     </div>
                                   )} */}
 
-                                  {/* Title */}
-                                  <p className="text-gray-800 font-medium mb-2">
-                                    {card.title}
-                                  </p>
+                                {/* Title */}
+                                <p className="text-gray-800 font-medium mb-2">
+                                  {card.title}
+                                </p>
 
-                                  {/* Footer */}
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      {card.dueDate && (
-                                        <div className="flex items-center gap-1 text-xs text-gray-600">
-                                          <Calendar size={14} />
-                                          <span>
-                                            {new Date(
-                                              card.dueDate + "T00:00:00",
-                                            ).toLocaleDateString("vi-VN")}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {card.dueTime && (
-                                        <div className="flex items-center gap-1 text-xs text-gray-600">
-                                          <Clock size={14} />
-                                          <span>{card.dueTime}</span>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {assignee && (
-                                      <img
-                                        src={assignee.avatar}
-                                        alt={assignee.name}
-                                        className="w-6 h-6 rounded-full"
-                                        title={assignee.name}
-                                      />
+                                {/* Footer */}
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {card.dueDate && (
+                                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                                        <Calendar size={14} />
+                                        <span>
+                                          {new Date(
+                                            card.dueDate + "T00:00:00",
+                                          ).toLocaleDateString("vi-VN")}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {card.dueTime && (
+                                      <div className="flex items-center gap-1 text-xs text-gray-600">
+                                        <Clock size={14} />
+                                        <span>{card.dueTime}</span>
+                                      </div>
                                     )}
                                   </div>
-                                </button>
-                              );
-                            },
-                          )}
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
 
                         {/* Add card button */}
@@ -691,7 +697,10 @@ export default function BoardPage() {
                         value={newListTitle}
                         onChange={(e) => setNewListTitle(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddList();
+                          if (e.key === "Enter" && !creatingList) {
+                            e.preventDefault();
+                            handleAddList();
+                          }
                           if (e.key === "Escape") {
                             setShowAddList(false);
                             setNewListTitle("");
@@ -700,20 +709,23 @@ export default function BoardPage() {
                         placeholder="Nhập tiêu đề danh sách..."
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-2"
                         autoFocus
+                        disabled={creatingList}
                       />
                       <div className="flex gap-2">
                         <button
                           onClick={handleAddList}
-                          className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition"
+                          disabled={creatingList}
+                          className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Thêm danh sách
+                          {creatingList ? "Đang tạo..." : "Thêm danh sách"}
                         </button>
                         <button
                           onClick={() => {
                             setShowAddList(false);
                             setNewListTitle("");
                           }}
-                          className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm transition"
+                          disabled={creatingList}
+                          className="px-3 py-1.5 text-gray-600 hover:bg-gray-200 rounded-lg text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Hủy
                         </button>
@@ -783,64 +795,76 @@ export default function BoardPage() {
       </div>
 
       {/* Card detail modal */}
-      {selectedCard && selectedCardData && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setSelectedCard(null)}
-        >
+      {showCardModal && selectedCard && selectedCardData && (
+        <>
+          {console.log(
+            "🃏 Rendering modal for card:",
+            selectedCard,
+            selectedCardData,
+          )}
           <div
-            className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              setSelectedCard(null);
+              setShowCardModal(false);
+            }}
           >
-            {/* Modal header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-gray-100 rounded-lg mt-1">
-                    <svg
-                      className="w-5 h-5 text-gray-600"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                  </div>
-                  <div className="flex-1">
-                    <h2 className="text-xl font-bold text-gray-800 mb-2">
-                      {selectedCardData.title}
-                    </h2>
-                    <p className="text-sm text-gray-600">
-                      trong danh sách{" "}
-                      <span className="font-medium">
-                        {
-                          lists.find(
-                            (l: { id: any }) =>
-                              l.id === selectedCardData.listId,
-                          )?.title
-                        }
-                      </span>
-                    </p>
+            <div
+              className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-gray-100 rounded-lg mt-1">
+                      <svg
+                        className="w-5 h-5 text-gray-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-gray-800 mb-2">
+                        {selectedCardData.title}
+                      </h2>
+                      <p className="text-sm text-gray-600">
+                        trong danh sách{" "}
+                        <span className="font-medium">
+                          {
+                            lists.find(
+                              (l: { id: any }) =>
+                                l.id === selectedCardData.listId,
+                            )?.title
+                          }
+                        </span>
+                      </p>
+                    </div>
                   </div>
                 </div>
+                <button
+                  onClick={() => {
+                    setSelectedCard(null);
+                    setShowCardModal(false);
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <X size={20} className="text-gray-600" />
+                </button>
               </div>
-              <button
-                onClick={() => setSelectedCard(null)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition"
-              >
-                <X size={20} className="text-gray-600" />
-              </button>
-            </div>
 
-            {/* Modal content */}
-            <div className="p-6 space-y-6">
-              {/* Labels */}
-              {/* {selectedCardData.labels.length > 0 && (
+              {/* Modal content */}
+              <div className="p-6 space-y-6">
+                {/* Labels */}
+                {/* {selectedCardData.labels.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">
                     Nhãn
@@ -858,175 +882,149 @@ export default function BoardPage() {
                 </div>
               )} */}
 
-              {/* Description */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <svg
-                    className="w-5 h-5 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h7"
-                    />
-                  </svg>
-                  <h3 className="text-sm font-semibold text-gray-700">Mô tả</h3>
-                </div>
-                <textarea
-                  value={selectedCardData.description || ""}
-                  onChange={(e) =>
-                    updateCard(selectedCard, { description: e.target.value })
-                  }
-                  placeholder="Thêm mô tả chi tiết hơn..."
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                  rows={4}
-                />
-              </div>
-
-              {/* Due date and time */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Calendar size={20} className="text-gray-600" />
-                  <h3 className="text-sm font-semibold text-gray-700">
-                    Hạn hoàn thành
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs text-gray-600 mb-1">
-                        Ngày
-                      </label>
-                      <input
-                        type="date"
-                        value={selectedCardData.dueDate || ""}
-                        onChange={(e) =>
-                          updateCard(selectedCard, { dueDate: e.target.value })
-                        }
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs text-gray-600 mb-1">
-                        Giờ
-                      </label>
-                      <input
-                        type="time"
-                        value={selectedCardData.dueTime || ""}
-                        onChange={(e) =>
-                          updateCard(selectedCard, { dueTime: e.target.value })
-                        }
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedCardData.completed}
-                      onChange={(e) =>
-                        updateCard(selectedCard, {
-                          completed: e.target.checked,
-                        })
-                      }
-                      className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-                    />
-                    <span className="text-sm text-gray-700">Hoàn thành</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Assignee */}
-              {selectedCardData.assignee && (
+                {/* Description */}
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                    Người thực hiện
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={getUserById(selectedCardData.assignee)?.avatar}
-                      alt={getUserById(selectedCardData.assignee)?.name}
-                      className="w-10 h-10 rounded-full"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        {getUserById(selectedCardData.assignee)?.name}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {getUserById(selectedCardData.assignee)?.email}
-                      </p>
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg
+                      className="w-5 h-5 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16M4 18h7"
+                      />
+                    </svg>
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      Mô tả
+                    </h3>
+                  </div>
+                  <textarea
+                    value={selectedCardData.description || ""}
+                    onChange={(e) =>
+                      handleUpdateCard(selectedCard, {
+                        description: e.target.value,
+                      })
+                    }
+                    placeholder="Thêm mô tả chi tiết hơn..."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                    rows={4}
+                  />
+                </div>
+
+                {/* Due date and time */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Calendar size={20} className="text-gray-600" />
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      Hạn hoàn thành
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-600 mb-1">
+                          Hạn hoàn thành
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={
+                            selectedCardData.due_date
+                              ? new Date(selectedCardData.due_date)
+                                  .toISOString()
+                                  .slice(0, 16)
+                              : ""
+                          }
+                          onChange={(e) =>
+                            handleUpdateCard(selectedCard, {
+                              due_date: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCardData.completed}
+                        onChange={(e) =>
+                          handleUpdateCard(selectedCard, {
+                            completed: e.target.checked,
+                          })
+                        }
+                        className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                      />
+                      <span className="text-sm text-gray-700">Hoàn thành</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Comments */}
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg
+                      className="w-5 h-5 text-gray-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                      />
+                    </svg>
+                    <h3 className="text-sm font-semibold text-gray-700">
+                      Bình luận
+                    </h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 rounded-full bg-purple-500 text-white flex items-center justify-center font-semibold text-sm">
+                        {users[0]?.name?.charAt(0).toUpperCase() ?? "U"}
+                      </div>
+                      <textarea
+                        placeholder="Viết bình luận..."
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                        rows={2}
+                      />
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Comments */}
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <svg
-                    className="w-5 h-5 text-gray-600"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                    />
-                  </svg>
-                  <h3 className="text-sm font-semibold text-gray-700">
-                    Bình luận
-                  </h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <img
-                      src={users[0].avatar}
-                      alt={users[0].name}
-                      className="w-8 h-8 rounded-full"
-                    />
-                    <textarea
-                      placeholder="Viết bình luận..."
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="pt-4 border-t border-gray-200 flex gap-3">
-                <button
-                  onClick={() => setSelectedCard(null)}
-                  className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition"
-                >
-                  Đóng
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm("Bạn có chắc muốn xóa thẻ này?")) {
-                      setCards(
-                        cards.filter(
-                          (c: { id: string }) => c.id !== selectedCard,
-                        ),
-                      );
+                {/* Actions */}
+                <div className="pt-4 border-t border-gray-200 flex gap-3">
+                  <button
+                    onClick={() => {
                       setSelectedCard(null);
-                    }
-                  }}
-                  className="px-4 py-2 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 transition"
-                >
-                  Xóa thẻ
-                </button>
+                      setShowCardModal(false);
+                    }}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm("Bạn có chắc muốn xóa thẻ này?")) {
+                        setCards(cards.filter((c) => c.id !== selectedCard));
+                        setSelectedCard(null);
+                        setShowCardModal(false);
+                      }
+                    }}
+                    className="px-4 py-2 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 transition"
+                  >
+                    Xóa thẻ
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

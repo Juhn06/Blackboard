@@ -4,7 +4,6 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  avatar: string;
   password?: string;
   phone?: string;
 }
@@ -17,8 +16,6 @@ export const mockUsers = [
     email: "admin@gmail.com",
     password: "123456",
     phone: "0123456789",
-    avatar:
-      "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop",
   },
   {
     id: "2",
@@ -26,8 +23,6 @@ export const mockUsers = [
     email: "member@gmail.com",
     password: "123456",
     phone: "0987654321",
-    avatar:
-      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
   },
 ];
 
@@ -66,8 +61,6 @@ export const currentUser: User = {
   id: "1",
   email: "user@blackboard.com",
   name: "Nguyễn Văn A",
-  avatar:
-    "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop",
 };
 
 export const users: User[] = [
@@ -76,15 +69,11 @@ export const users: User[] = [
     id: "2",
     email: "member2@blackboard.com",
     name: "Trần Thị B",
-    avatar:
-      "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
   },
   {
     id: "3",
     email: "member3@blackboard.com",
     name: "Lê Văn C",
-    avatar:
-      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
   },
 ];
 

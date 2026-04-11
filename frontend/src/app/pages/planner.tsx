@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { cards as initialCards, lists, boards } from "../data/mockData";
+import { cardsAPI } from "../services/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,25 +13,36 @@ export default function PlannerPage() {
   const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 3)); // April 3, 2026
 
-  // Load cards từ localStorage để đồng bộ với board
-  const [cards, setCards] = useState(() => {
-    const saved = localStorage.getItem("blackboard_cards");
-    return saved ? JSON.parse(saved) : initialCards;
-  });
+  // Load cards từ API để đồng bộ với board
+  const [cards, setCards] = useState<any[]>([]);
 
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
 
-  // Refresh cards khi localStorage thay đổi
+  // Load cards từ API
   useEffect(() => {
-    const handleStorageChange = () => {
-      const saved = localStorage.getItem("blackboard_cards");
-      if (saved) {
-        setCards(JSON.parse(saved));
+    const loadCards = async () => {
+      try {
+        // Load all cards from all boards
+        const allCards: any[] = [];
+        for (const board of boards) {
+          const boardLists = lists.filter((l) => l.boardId === board.id);
+          for (const list of boardLists) {
+            const cardsData = await cardsAPI.getCardsByList(list.id.toString());
+            allCards.push(...cardsData);
+          }
+        }
+        setCards(allCards);
+      } catch (error) {
+        console.error("Failed to load cards:", error);
+        // Fallback to localStorage
+        const saved = localStorage.getItem("blackboard_cards");
+        if (saved) {
+          setCards(JSON.parse(saved));
+        }
       }
     };
 
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    loadCards();
   }, []);
 
   const selectedCardData = cards.find((c: any) => c.id === selectedCard);
@@ -80,7 +92,7 @@ export default function PlannerPage() {
   // Lấy cards có deadline cho ngày cụ thể
   const getCardsForDate = (date: Date) => {
     const dateStr = date.toISOString().split("T")[0];
-    return cards.filter((card: any) => card.dueDate === dateStr);
+    return cards.filter((card: any) => card.due_date === dateStr);
   };
 
   const isToday = (date: Date | null) => {
@@ -101,7 +113,7 @@ export default function PlannerPage() {
     }
 
     // FIX: Parse date đúng cách để tránh timezone issue
-    const dueDate = new Date(card.dueDate + "T00:00:00");
+    const dueDate = new Date(card.due_date + "T00:00:00");
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -117,12 +129,25 @@ export default function PlannerPage() {
   };
 
   // Hàm cập nhật card
-  const updateCard = (cardId: string, updates: any) => {
-    const updatedCards = cards.map((c: any) =>
-      c.id === cardId ? { ...c, ...updates } : c,
-    );
-    setCards(updatedCards);
-    localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
+  const updateCard = async (cardId: string, updates: any) => {
+    try {
+      const updatedCard = await cardsAPI.updateCard(cardId, updates);
+
+      // Update cards state with updated card
+      const updatedCards = cards.map((c: any) =>
+        c.id === parseInt(cardId) ? { ...c, ...updatedCard } : c,
+      );
+      setCards(updatedCards);
+      localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
+    } catch (error) {
+      console.error("Failed to update card:", error);
+      // Fallback to local update
+      const updatedCards = cards.map((c: any) =>
+        c.id === parseInt(cardId) ? { ...c, ...updates } : c,
+      );
+      setCards(updatedCards);
+      localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
+    }
   };
 
   return (
@@ -295,8 +320,8 @@ export default function PlannerPage() {
               <div className="space-y-3">
                 {cards
                   .filter((card: any) => {
-                    if (!card.dueDate) return false;
-                    const cardDate = new Date(card.dueDate);
+                    if (!card.due_date) return false;
+                    const cardDate = new Date(card.due_date);
                     const today = new Date(2026, 3, 3);
                     return (
                       cardDate.getDate() === today.getDate() &&
@@ -361,8 +386,8 @@ export default function PlannerPage() {
                     return cardDate > today;
                   })
                   .sort((a: any, b: any) => {
-                    const dateA = new Date(a.dueDate!);
-                    const dateB = new Date(b.dueDate!);
+                    const dateA = new Date(a.due_date!);
+                    const dateB = new Date(b.due_date!);
                     return dateA.getTime() - dateB.getTime();
                   })
                   .slice(0, 5)
@@ -371,7 +396,7 @@ export default function PlannerPage() {
                     const board = boards.find((b) => b.id === list?.boardId);
                     const cardStyles = getCardStyles(
                       card,
-                      new Date(card.dueDate),
+                      new Date(card.due_date),
                     );
 
                     return (
@@ -396,7 +421,7 @@ export default function PlannerPage() {
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-gray-600">{board?.name}</p>
                           <p className="text-xs text-gray-500">
-                            {new Date(card.dueDate!).toLocaleDateString(
+                            {new Date(card.due_date!).toLocaleDateString(
                               "vi-VN",
                             )}
                           </p>
@@ -565,10 +590,16 @@ export default function PlannerPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <input
-                    type="date"
-                    value={selectedCardData.dueDate || ""}
+                    type="datetime-local"
+                    value={
+                      selectedCardData.due_date
+                        ? new Date(selectedCardData.due_date)
+                            .toISOString()
+                            .slice(0, 16)
+                        : ""
+                    }
                     onChange={(e) =>
-                      updateCard(selectedCard, { dueDate: e.target.value })
+                      updateCard(selectedCard, { due_date: e.target.value })
                     }
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />

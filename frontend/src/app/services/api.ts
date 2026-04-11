@@ -119,11 +119,7 @@ export const listsAPI = {
     return authFetch(`/lists/board/${boardId}`);
   },
 
-  createList: async (listData: {
-    title: string;
-    board_id: number;
-    position: number;
-  }) => {
+  createList: async (listData: { title: string; board_id: number }) => {
     return authFetch("/lists/", {
       method: "POST",
       body: JSON.stringify(listData),

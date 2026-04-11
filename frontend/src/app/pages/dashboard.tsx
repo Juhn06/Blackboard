@@ -49,6 +49,12 @@ export default function DashboardPage() {
   );
   const [selectedWorkspace, setSelectedWorkspace] = useState("");
 
+  // State cho modal tạo workspace
+  const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] =
+    useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+
   // State cho dropdown avatar
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -102,21 +108,74 @@ export default function DashboardPage() {
 
   // Hàm tạo board mới
   const handleCreateBoard = async () => {
-    const workspaceId = parseInt(selectedWorkspace, 10);
-    if (!newBoardName.trim() || Number.isNaN(workspaceId)) return;
+    if (!newBoardName.trim()) {
+      alert("Vui lòng nhập tên bảng");
+      return;
+    }
+
+    if (!selectedWorkspace) {
+      alert("Vui lòng chọn không gian làm việc");
+      return;
+    }
 
     try {
-      const newBoard = await boardsAPI.createBoard({
-        name: newBoardName,
-        workspace_id: workspaceId,
+      const boardData = {
+        name: newBoardName.trim(),
+        workspace_id: parseInt(selectedWorkspace),
         background: selectedBackground,
-      });
+      };
 
-      setBoards([...boards, newBoard]);
+      const newBoard = await boardsAPI.createBoard(boardData);
+
+      // Cập nhật state boards
+      setBoards((prevBoards) => [...prevBoards, newBoard]);
+
+      // Reset form và đóng modal
       setNewBoardName("");
+      setSelectedBackground(
+        "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      );
       setShowCreateBoardModal(false);
     } catch (error) {
       console.error("Failed to create board:", error);
+      alert("Có lỗi xảy ra khi tạo bảng. Vui lòng thử lại.");
+    }
+  };
+
+  // Hàm tạo workspace mới
+  const handleCreateWorkspace = async () => {
+    if (!newWorkspaceName.trim()) {
+      alert("Vui lòng nhập tên không gian làm việc");
+      return;
+    }
+
+    setCreatingWorkspace(true);
+    try {
+      const workspaceData = {
+        name: newWorkspaceName.trim(),
+      };
+
+      const newWorkspace = await workspacesAPI.createWorkspace(workspaceData);
+
+      // Cập nhật state workspaces
+      setWorkspaces((prevWorkspaces) => [...prevWorkspaces, newWorkspace]);
+
+      // Auto select newly created workspace
+      setWorkspace(newWorkspace);
+      setSelectedWorkspace(newWorkspace.id.toString());
+
+      // Load boards cho workspace mới
+      const boardsData = await boardsAPI.getBoardsByWorkspace(newWorkspace.id);
+      setBoards(boardsData);
+
+      // Reset form và đóng modal
+      setNewWorkspaceName("");
+      setShowCreateWorkspaceModal(false);
+    } catch (error) {
+      console.error("Failed to create workspace:", error);
+      alert("Có lỗi xảy ra khi tạo không gian làm việc. Vui lòng thử lại.");
+    } finally {
+      setCreatingWorkspace(false);
     }
   };
 
@@ -240,25 +299,22 @@ export default function DashboardPage() {
             {/* Right side */}
             <div className="flex items-center gap-4 ml-6">
               <button
-                onClick={() => setShowCreateBoardModal(true)}
-                disabled={!workspace}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition ${workspace ? "bg-[#051836] text-white hover:shadow-lg" : "bg-gray-300 text-gray-500 cursor-not-allowed"}`}
+                onClick={() => setShowCreateWorkspaceModal(true)}
+                className={
+                  "flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition bg-[#051836] text-white hover:shadow-lg hover:bg-[#051836cc]"
+                }
               >
                 <Plus size={20} />
-                <span>Tạo mới</span>
+                <span>Tạo không gian làm việc</span>
               </button>
 
-              {/* User avatar with dropdown */}
+              {/* User menu */}
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="w-10 h-10 rounded-full overflow-hidden border-2 border-purple-200 hover:border-purple-400 transition"
+                  className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center font-semibold hover:bg-purple-600 transition"
                 >
-                  <img
-                    src={currentUser.avatar ?? "/images/default-avatar.png"}
-                    alt={currentUser.name ?? "User"}
-                    className="w-full h-full object-cover"
-                  />
+                  {currentUser.name?.charAt(0).toUpperCase() ?? "U"}
                 </button>
 
                 {/* Dropdown menu */}
@@ -266,13 +322,9 @@ export default function DashboardPage() {
                   <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
                     <div className="p-4 border-b border-gray-200">
                       <div className="flex items-center gap-3">
-                        <img
-                          src={
-                            currentUser.avatar ?? "/images/default-avatar.png"
-                          }
-                          alt={currentUser.name ?? "User"}
-                          className="w-12 h-12 rounded-full"
-                        />
+                        <div className="w-12 h-12 rounded-full bg-purple-500 text-white flex items-center justify-center font-semibold">
+                          {currentUser.name?.charAt(0).toUpperCase() ?? "U"}
+                        </div>
                         <div className="flex-1">
                           <p className="font-semibold text-gray-800">
                             {currentUser.name}
@@ -395,11 +447,9 @@ export default function DashboardPage() {
                     key={idx}
                     className="flex items-start gap-3 pb-4 border-b border-gray-100 last:border-0"
                   >
-                    <img
-                      src={activity.user.avatar}
-                      alt={activity.user.name}
-                      className="w-8 h-8 rounded-full"
-                    />
+                    <div className="w-8 h-8 rounded-full bg-purple-500 text-white flex items-center justify-center font-semibold text-xs">
+                      {activity.user.name?.charAt(0).toUpperCase() ?? "U"}
+                    </div>
                     <div className="flex-1">
                       <p className="text-sm text-gray-700">
                         <span className="font-semibold">
@@ -523,6 +573,66 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Modal tạo workspace mới */}
+      {showCreateWorkspaceModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowCreateWorkspaceModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-800">
+                Tạo không gian làm việc mới
+              </h2>
+              <button
+                onClick={() => setShowCreateWorkspaceModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Tên không gian làm việc */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tên không gian làm việc
+                </label>
+                <input
+                  type="text"
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  placeholder="Ví dụ: Dự án công ty"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  autoFocus
+                  disabled={creatingWorkspace}
+                />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={handleCreateWorkspace}
+                disabled={creatingWorkspace}
+                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {creatingWorkspace ? "Đang tạo..." : "Tạo không gian"}
+              </button>
+              <button
+                onClick={() => setShowCreateWorkspaceModal(false)}
+                disabled={creatingWorkspace}
+                className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal thông tin cá nhân */}
       {showProfileModal && (
         <div
@@ -548,11 +658,9 @@ export default function DashboardPage() {
             <div className="p-6 space-y-6">
               {/* Avatar */}
               <div className="flex justify-center">
-                <img
-                  src={currentUser.avatar}
-                  alt={currentUser.name}
-                  className="w-24 h-24 rounded-full border-4 border-purple-200"
-                />
+                <div className="w-24 h-24 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold text-3xl border-4 border-purple-200">
+                  {currentUser.name?.charAt(0).toUpperCase() ?? "U"}
+                </div>
               </div>
 
               {/* Thông tin */}

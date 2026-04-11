@@ -10,7 +10,6 @@ class User(Base):
     password_hash = Column(String)
 
     name = Column(String)
-    avatar = Column(String, nullable=True)
     phone = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
