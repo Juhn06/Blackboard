@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [workspace, setWorkspace] = useState<any>(null);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [boards, setBoards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -40,6 +41,18 @@ export default function DashboardPage() {
     loadUser();
   }, [navigate]);
 
+  // State cho modal tạo board
+  const [showCreateBoardModal, setShowCreateBoardModal] = useState(false);
+  const [newBoardName, setNewBoardName] = useState("");
+  const [selectedBackground, setSelectedBackground] = useState(
+    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+  );
+  const [selectedWorkspace, setSelectedWorkspace] = useState("");
+
+  // State cho dropdown avatar
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
   // Load workspaces và boards từ API
   useEffect(() => {
     const loadData = async () => {
@@ -48,11 +61,17 @@ export default function DashboardPage() {
       try {
         const workspacesData = await workspacesAPI.getWorkspaces();
         if (workspacesData.length > 0) {
+          setWorkspaces(workspacesData);
           setWorkspace(workspacesData[0]);
+          setSelectedWorkspace(workspacesData[0].id.toString());
           const boardsData = await boardsAPI.getBoardsByWorkspace(
             workspacesData[0].id,
           );
           setBoards(boardsData);
+        } else {
+          setWorkspaces([]);
+          setWorkspace(null);
+          setSelectedWorkspace("");
         }
       } catch (error) {
         console.error("Failed to load data:", error);
@@ -63,18 +82,6 @@ export default function DashboardPage() {
 
     loadData();
   }, [currentUser]);
-
-  // State cho modal tạo board
-  const [showCreateBoardModal, setShowCreateBoardModal] = useState(false);
-  const [newBoardName, setNewBoardName] = useState("");
-  const [selectedBackground, setSelectedBackground] = useState(
-    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-  );
-  const [selectedWorkspace, setSelectedWorkspace] = useState("ws1");
-
-  // State cho dropdown avatar
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Lọc boards theo search query
   const filteredBoards = boards.filter((board: any) =>
@@ -95,12 +102,13 @@ export default function DashboardPage() {
 
   // Hàm tạo board mới
   const handleCreateBoard = async () => {
-    if (!newBoardName.trim() || !workspace) return;
+    const workspaceId = parseInt(selectedWorkspace, 10);
+    if (!newBoardName.trim() || Number.isNaN(workspaceId)) return;
 
     try {
       const newBoard = await boardsAPI.createBoard({
         name: newBoardName,
-        workspace_id: workspace.id,
+        workspace_id: workspaceId,
         background: selectedBackground,
       });
 
@@ -482,11 +490,17 @@ export default function DashboardPage() {
                   onChange={(e) => setSelectedWorkspace(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  {workspace.map((ws: Workspace) => (
-                    <option key={ws.id} value={ws.id}>
-                      {ws.name}
+                  {workspaces.length > 0 ? (
+                    workspaces.map((ws: Workspace) => (
+                      <option key={ws.id} value={ws.id}>
+                        {ws.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="" disabled>
+                      Chưa có không gian làm việc
                     </option>
-                  ))}
+                  )}
                 </select>
               </div>
             </div>

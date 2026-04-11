@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -38,7 +39,14 @@ def create_board(
     db.add(member)
     db.commit()
 
-    return board
+    return {
+        "id": board.id,
+        "name": board.name,
+        "background": board.background,
+        "workspace_id": board.workspace_id,
+        "created_by": board.created_by,
+        "created_at": board.created_at.isoformat() if board.created_at else None,
+    }
 
 
 # lấy board theo workspace
