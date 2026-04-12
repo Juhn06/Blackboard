@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { cards as initialCards, lists, boards } from "../data/mockData";
+import { lists, boards } from "../data/mockData";
 import { cardsAPI } from "../services/api";
 import {
   ChevronLeft,
@@ -11,7 +11,7 @@ import {
 
 export default function PlannerPage() {
   const navigate = useNavigate();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 3)); // April 3, 2026
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   // Load cards từ API để đồng bộ với board
   const [cards, setCards] = useState<any[]>([]);
@@ -46,6 +46,38 @@ export default function PlannerPage() {
   }, []);
 
   const selectedCardData = cards.find((c: any) => c.id === selectedCard);
+
+  const parseDueDate = (value?: string | null) => {
+    if (!value) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const parsedDate = new Date(`${value}T00:00:00`);
+      return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+    }
+
+    const parsedDate = new Date(value);
+    return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+  };
+
+  const toIsoDateTime = (value: string) => {
+    if (!value) return null;
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) return null;
+    return parsedDate.toISOString();
+  };
+
+  const isSameCalendarDay = (left: Date, right: Date) =>
+    left.getDate() === right.getDate() &&
+    left.getMonth() === right.getMonth() &&
+    left.getFullYear() === right.getFullYear();
+  const toDateTimeLocalValue = (value?: string | null) => {
+    if (!value) return "";
+    const parsedDate = parseDueDate(value);
+    if (!parsedDate) return "";
+
+    const pad = (num: number) => String(num).padStart(2, "0");
+    return `${parsedDate.getFullYear()}-${pad(parsedDate.getMonth() + 1)}-${pad(parsedDate.getDate())}T${pad(parsedDate.getHours())}:${pad(parsedDate.getMinutes())}`;
+  };
 
   // Lấy các ngày trong tháng
   const getDaysInMonth = (date: Date) => {
@@ -90,30 +122,43 @@ export default function PlannerPage() {
   };
 
   // Lấy cards có deadline cho ngày cụ thể
+  const events = cards
+    .filter((card: any) => card.due_date)
+    .map((card: any) => {
+      const start = parseDueDate(card.due_date);
+      if (!start) return null;
+
+      return {
+        title: card.title,
+        start,
+        card,
+      };
+    })
+    .filter(Boolean) as Array<{ title: string; start: Date; card: any }>;
+
   const getCardsForDate = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
-    return cards.filter((card: any) => card.due_date === dateStr);
+    return events
+      .filter((event) => isSameCalendarDay(event.start, date))
+      .map((event) => event.card);
   };
 
   const isToday = (date: Date | null) => {
     if (!date) return false;
-    const today = new Date(2026, 3, 3); // Current date in context
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
+    return isSameCalendarDay(date, new Date());
   };
 
   // Hàm xác định màu card theo trạng thái
-  const getCardStyles = (card: any, date: Date) => {
+  const getCardStyles = (card: any) => {
     // Priority: completed > dueSoon > pending
     if (card.completed) {
       return "bg-green-100 border-green-300";
     }
 
     // FIX: Parse date đúng cách để tránh timezone issue
-    const dueDate = new Date(card.due_date + "T00:00:00");
+    const dueDate = parseDueDate(card.due_date);
+    if (!dueDate) {
+      return "bg-yellow-100 border-yellow-300";
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -130,12 +175,29 @@ export default function PlannerPage() {
 
   // Hàm cập nhật card
   const updateCard = async (cardId: string, updates: any) => {
+    const payload: Record<string, any> = {};
+
+    if (typeof updates.title === "string") {
+      payload.title = updates.title;
+    }
+    if (typeof updates.description === "string") {
+      payload.description = updates.description;
+    }
+    if ("due_date" in updates) {
+      payload.due_date = updates.due_date ?? null;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
     try {
-      const updatedCard = await cardsAPI.updateCard(cardId, updates);
+      const updatedCard = await cardsAPI.updateCard(cardId, payload);
+      const mergedUpdates = { ...payload, ...(updatedCard || {}) };
 
       // Update cards state with updated card
       const updatedCards = cards.map((c: any) =>
-        c.id === parseInt(cardId) ? { ...c, ...updatedCard } : c,
+        c.id === parseInt(cardId) ? { ...c, ...mergedUpdates } : c,
       );
       setCards(updatedCards);
       localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
@@ -143,12 +205,35 @@ export default function PlannerPage() {
       console.error("Failed to update card:", error);
       // Fallback to local update
       const updatedCards = cards.map((c: any) =>
-        c.id === parseInt(cardId) ? { ...c, ...updates } : c,
+        c.id === parseInt(cardId) ? { ...c, ...payload } : c,
       );
       setCards(updatedCards);
       localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
     }
   };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayCards = cards.filter((card: any) => {
+    const cardDate = parseDueDate(card.due_date);
+    return cardDate ? isSameCalendarDay(cardDate, today) : false;
+  });
+
+  const upcomingCards = cards
+    .filter((card: any) => {
+      const cardDate = parseDueDate(card.due_date);
+      if (!cardDate) return false;
+
+      const normalizedCardDate = new Date(cardDate);
+      normalizedCardDate.setHours(0, 0, 0, 0);
+      return normalizedCardDate > today;
+    })
+    .sort((a: any, b: any) => {
+      const dateA = parseDueDate(a.due_date);
+      const dateB = parseDueDate(b.due_date);
+      return (dateA?.getTime() ?? 0) - (dateB?.getTime() ?? 0);
+    });
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-purple-50 via-white to-blue-50">
@@ -186,7 +271,7 @@ export default function PlannerPage() {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setCurrentDate(new Date(2026, 3, 3))}
+              onClick={() => setCurrentDate(new Date())}
               className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
             >
               Hôm nay
@@ -260,12 +345,12 @@ export default function PlannerPage() {
                             <div className="space-y-1">
                               {dayCards.map((card: any) => {
                                 const list = lists.find(
-                                  (l) => l.id === card.listId,
+                                  (l) => l.id === (card.listId ?? card.list_id),
                                 );
                                 const board = boards.find(
                                   (b) => b.id === list?.boardId,
                                 );
-                                const cardStyles = getCardStyles(card, day);
+                                const cardStyles = getCardStyles(card);
 
                                 return (
                                   <div
@@ -291,9 +376,9 @@ export default function PlannerPage() {
                                           ))}
                                       </div>
                                     )} */}
-                                    {card.dueTime && (
+                                    {card.due_time && (
                                       <p className="text-xs text-gray-600 mt-1">
-                                        {card.dueTime}
+                                        {card.due_time}
                                       </p>
                                     )}
                                   </div>
@@ -318,21 +403,12 @@ export default function PlannerPage() {
                 Công việc hôm nay
               </h3>
               <div className="space-y-3">
-                {cards
-                  .filter((card: any) => {
-                    if (!card.due_date) return false;
-                    const cardDate = new Date(card.due_date);
-                    const today = new Date(2026, 3, 3);
-                    return (
-                      cardDate.getDate() === today.getDate() &&
-                      cardDate.getMonth() === today.getMonth() &&
-                      cardDate.getFullYear() === today.getFullYear()
+                {todayCards.map((card: any) => {
+                    const list = lists.find(
+                      (l) => l.id === (card.listId ?? card.list_id),
                     );
-                  })
-                  .map((card: any) => {
-                    const list = lists.find((l) => l.id === card.listId);
                     const board = boards.find((b) => b.id === list?.boardId);
-                    const cardStyles = getCardStyles(card, new Date());
+                    const cardStyles = getCardStyles(card);
 
                     return (
                       <button
@@ -357,16 +433,7 @@ export default function PlannerPage() {
                       </button>
                     );
                   })}
-                {cards.filter((card: any) => {
-                  if (!card.dueDate) return false;
-                  const cardDate = new Date(card.dueDate);
-                  const today = new Date(2026, 3, 3);
-                  return (
-                    cardDate.getDate() === today.getDate() &&
-                    cardDate.getMonth() === today.getMonth() &&
-                    cardDate.getFullYear() === today.getFullYear()
-                  );
-                }).length === 0 && (
+                {todayCards.length === 0 && (
                   <p className="text-sm text-gray-500 text-center py-4">
                     Không có công việc nào hôm nay
                   </p>
@@ -378,26 +445,15 @@ export default function PlannerPage() {
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-4">Sắp tới</h3>
               <div className="space-y-3">
-                {cards
-                  .filter((card: any) => {
-                    if (!card.dueDate) return false;
-                    const cardDate = new Date(card.dueDate);
-                    const today = new Date(2026, 3, 3);
-                    return cardDate > today;
-                  })
-                  .sort((a: any, b: any) => {
-                    const dateA = new Date(a.due_date!);
-                    const dateB = new Date(b.due_date!);
-                    return dateA.getTime() - dateB.getTime();
-                  })
+                {upcomingCards
                   .slice(0, 5)
                   .map((card: any) => {
-                    const list = lists.find((l) => l.id === card.listId);
-                    const board = boards.find((b) => b.id === list?.boardId);
-                    const cardStyles = getCardStyles(
-                      card,
-                      new Date(card.due_date),
+                    const list = lists.find(
+                      (l) => l.id === (card.listId ?? card.list_id),
                     );
+                    const board = boards.find((b) => b.id === list?.boardId);
+                    const cardStyles = getCardStyles(card);
+                    const dueDate = parseDueDate(card.due_date);
 
                     return (
                       <button
@@ -421,9 +477,7 @@ export default function PlannerPage() {
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-gray-600">{board?.name}</p>
                           <p className="text-xs text-gray-500">
-                            {new Date(card.due_date!).toLocaleDateString(
-                              "vi-VN",
-                            )}
+                            {dueDate ? dueDate.toLocaleDateString("vi-VN") : ""}
                           </p>
                         </div>
                       </button>
@@ -440,7 +494,9 @@ export default function PlannerPage() {
               <div className="space-y-2">
                 {boards.slice(0, 4).map((board) => {
                   const boardCards = cards.filter((card: any) => {
-                    const list = lists.find((l) => l.id === card.listId);
+                    const list = lists.find(
+                      (l) => l.id === (card.listId ?? card.list_id),
+                    );
                     return list?.boardId === board.id;
                   });
                   const completedCards = boardCards.filter(
@@ -513,8 +569,11 @@ export default function PlannerPage() {
                       trong danh sách{" "}
                       <span className="font-medium">
                         {
-                          lists.find((l) => l.id === selectedCardData.listId)
-                            ?.title
+                          lists.find(
+                            (l) =>
+                              l.id ===
+                              (selectedCardData.listId ?? selectedCardData.list_id),
+                          )?.title
                         }
                       </span>
                     </p>
@@ -591,15 +650,11 @@ export default function PlannerPage() {
                 <div className="flex items-center gap-3">
                   <input
                     type="datetime-local"
-                    value={
-                      selectedCardData.due_date
-                        ? new Date(selectedCardData.due_date)
-                            .toISOString()
-                            .slice(0, 16)
-                        : ""
-                    }
+                    value={toDateTimeLocalValue(selectedCardData.due_date)}
                     onChange={(e) =>
-                      updateCard(selectedCard, { due_date: e.target.value })
+                      updateCard(selectedCard, {
+                        due_date: toIsoDateTime(e.target.value),
+                      })
                     }
                     className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
@@ -630,7 +685,9 @@ export default function PlannerPage() {
                 <button
                   onClick={() => {
                     const list = lists.find(
-                      (l) => l.id === selectedCardData.listId,
+                      (l) =>
+                        l.id ===
+                        (selectedCardData.listId ?? selectedCardData.list_id),
                     );
                     const board = boards.find((b) => b.id === list?.boardId);
                     if (board) {

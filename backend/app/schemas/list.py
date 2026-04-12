@@ -8,8 +8,8 @@ class ListCreate(BaseModel):
 
 
 class ListUpdate(BaseModel):
-    title: Optional[str]
-    position: Optional[int]
+    title: Optional[str] = None
+    position: Optional[int] = None
 
 
 class ListOut(BaseModel):

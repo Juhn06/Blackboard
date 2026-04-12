@@ -4,26 +4,51 @@ import { authAPI } from "../services/api";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
+
+    if (isRegisterMode && !name.trim()) {
+      setError("Vui long nhap ten");
+      setSubmitting(false);
+      return;
+    }
 
     try {
-      await authAPI.login(email, password);
+      if (isRegisterMode) {
+        await authAPI.register(name.trim(), email, password);
+      } else {
+        await authAPI.login(email, password);
+      }
       navigate("/dashboard");
     } catch (err) {
-      setError("Email hoặc mật khẩu không đúng");
+      setError(
+        isRegisterMode
+          ? "Dang ky that bai. Email co the da ton tai."
+          : "Email hoac mat khau khong dung",
+      );
+    } finally {
+      setSubmitting(false);
     }
+  };
+
+  const fillDemoAccount = () => {
+    setName("Admin");
+    setEmail("admin@gmail.com");
+    setPassword("123456");
   };
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-purple-100 via-pink-50 to-blue-100">
       <div className="w-full max-w-md p-8">
-        {/* Logo và tiêu đề */}
         <div className="text-center mb-8">
           <div className="inline-block p-4 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl mb-4">
             <svg
@@ -41,16 +66,36 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">BlackBoard</h1>
-          <p className="text-gray-600">Quản lý công việc hiệu quả</p>
+          <p className="text-gray-600">
+            {isRegisterMode ? "Tao tai khoan moi" : "Quan ly cong viec hieu qua"}
+          </p>
         </div>
 
-        {/* Form đăng nhập */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          <form onSubmit={handleLogin} className="space-y-6">
-            {/* Error message */}
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
                 {error}
+              </div>
+            )}
+
+            {isRegisterMode && (
+              <div>
+                <label
+                  htmlFor="name"
+                  className="block text-sm font-medium text-gray-700 mb-2"
+                >
+                  Ten
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Nhap ten cua ban"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                  required
+                />
               </div>
             )}
 
@@ -77,14 +122,14 @@ export default function LoginPage() {
                 htmlFor="password"
                 className="block text-sm font-medium text-gray-700 mb-2"
               >
-                Mật khẩu
+                Mat khau
               </label>
               <input
                 id="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="********"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                 required
               />
@@ -92,9 +137,16 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition duration-200"
+              disabled={submitting}
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Đăng nhập
+              {submitting
+                ? isRegisterMode
+                  ? "Dang tao tai khoan..."
+                  : "Dang dang nhap..."
+                : isRegisterMode
+                  ? "Dang ky"
+                  : "Dang nhap"}
             </button>
           </form>
 
@@ -104,16 +156,13 @@ export default function LoginPage() {
                 <div className="w-full border-t border-gray-300"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Hoặc</span>
+                <span className="px-2 bg-white text-gray-500">Hoac</span>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={() => {
-                setEmail("admin@gmail.com");
-                setPassword("123456");
-              }}
+              onClick={fillDemoAccount}
               className="mt-6 w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition duration-200"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -134,42 +183,25 @@ export default function LoginPage() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              <span className="text-gray-700 font-medium">
-                Đăng nhập với Google
-              </span>
+              <span className="text-gray-700 font-medium">Dien tai khoan demo</span>
             </button>
           </div>
 
           <div className="mt-6 text-center">
-            <a
-              href="#"
-              className="text-sm text-purple-600 hover:text-purple-700"
+            <button
+              type="button"
+              onClick={() => {
+                setError("");
+                setIsRegisterMode((prev) => !prev);
+              }}
+              className="text-sm text-purple-600 hover:text-purple-700 font-semibold"
             >
-              Quên mật khẩu?
-            </a>
+              {isRegisterMode
+                ? "Da co tai khoan? Dang nhap"
+                : "Chua co tai khoan? Dang ky ngay"}
+            </button>
           </div>
         </div>
-
-        {/* Demo accounts */}
-        {/* <div className="mt-6 bg-white/80 backdrop-blur rounded-xl p-4">
-          <p className="text-xs font-semibold text-gray-600 mb-2">
-            Tài khoản demo:
-          </p>
-          <div className="space-y-1 text-xs text-gray-600">
-            <p>Admin: admin@gmail.com / 123456</p>
-            <p>Member: member@gmail.com / 123456</p>
-          </div>
-        </div> */}
-
-        <p className="mt-8 text-center text-sm text-gray-600">
-          Chưa có tài khoản?{" "}
-          <a
-            href="#"
-            className="text-purple-600 font-semibold hover:text-purple-700"
-          >
-            Đăng ký ngay
-          </a>
-        </p>
       </div>
     </div>
   );

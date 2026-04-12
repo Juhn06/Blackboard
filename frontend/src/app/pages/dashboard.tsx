@@ -16,12 +16,21 @@ import {
 } from "lucide-react";
 import { Workspace } from "../../types/workspace";
 
+interface WorkspaceMember {
+  id: number;
+  name: string;
+  email: string;
+  phone?: string | null;
+  roles: string[];
+  primary_role: string;
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [workspace, setWorkspace] = useState<any>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
   const [boards, setBoards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,17 +56,23 @@ export default function DashboardPage() {
   const [selectedBackground, setSelectedBackground] = useState(
     "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
   );
-  const [selectedWorkspace, setSelectedWorkspace] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
 
   // State cho modal tạo workspace
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] =
     useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const [workspaceNameError, setWorkspaceNameError] = useState("");
 
   // State cho dropdown avatar
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>(
+    [],
+  );
+  const [membersLoading, setMembersLoading] = useState(false);
 
   // Load workspaces và boards từ API
   useEffect(() => {
@@ -65,20 +80,22 @@ export default function DashboardPage() {
       if (!currentUser) return;
 
       try {
-        const workspacesData = await workspacesAPI.getWorkspaces();
-        if (workspacesData.length > 0) {
-          setWorkspaces(workspacesData);
-          setWorkspace(workspacesData[0]);
-          setSelectedWorkspace(workspacesData[0].id.toString());
-          const boardsData = await boardsAPI.getBoardsByWorkspace(
-            workspacesData[0].id,
-          );
-          setBoards(boardsData);
-        } else {
-          setWorkspaces([]);
-          setWorkspace(null);
-          setSelectedWorkspace("");
+        const workspacesData: Workspace[] = await workspacesAPI.getWorkspaces();
+        setWorkspaces(workspacesData);
+
+        if (workspacesData.length === 0) {
+          setActiveWorkspaceId("");
+          setSelectedWorkspaceId("");
+          setBoards([]);
+          return;
         }
+
+        const firstWorkspaceId = String(workspacesData[0].id);
+        setActiveWorkspaceId(firstWorkspaceId);
+        setSelectedWorkspaceId(firstWorkspaceId);
+
+        const boardsData = await boardsAPI.getBoardsByWorkspace(firstWorkspaceId);
+        setBoards(boardsData);
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
@@ -88,6 +105,86 @@ export default function DashboardPage() {
 
     loadData();
   }, [currentUser]);
+
+  const activeWorkspace =
+    workspaces.find((ws) => String(ws.id) === activeWorkspaceId) ?? null;
+  const effectiveWorkspaceId =
+    activeWorkspaceId || (workspaces.length > 0 ? String(workspaces[0].id) : "");
+  const displayedWorkspace =
+    activeWorkspace ?? (workspaces.length > 0 ? workspaces[0] : null);
+
+  const normalizeWorkspaceName = (name: string) =>
+    name.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const loadBoardsByWorkspace = async (workspaceId: string) => {
+    try {
+      const boardsData = await boardsAPI.getBoardsByWorkspace(workspaceId);
+      setBoards(boardsData);
+    } catch (error) {
+      console.error("Failed to load boards:", error);
+      setBoards([]);
+    }
+  };
+
+  useEffect(() => {
+    if (workspaces.length === 0) {
+      return;
+    }
+
+    const hasActiveWorkspace = workspaces.some(
+      (workspace) => String(workspace.id) === activeWorkspaceId,
+    );
+    if (hasActiveWorkspace) {
+      return;
+    }
+
+    const fallbackWorkspaceId = String(workspaces[0].id);
+    setActiveWorkspaceId(fallbackWorkspaceId);
+    setSelectedWorkspaceId((currentId) => {
+      if (
+        currentId &&
+        workspaces.some((workspace) => String(workspace.id) === currentId)
+      ) {
+        return currentId;
+      }
+      return fallbackWorkspaceId;
+    });
+
+    const syncBoards = async () => {
+      await loadBoardsByWorkspace(fallbackWorkspaceId);
+    };
+    void syncBoards();
+  }, [workspaces, activeWorkspaceId]);
+
+  const loadWorkspaceMembers = async (workspaceId: string) => {
+    setMembersLoading(true);
+    try {
+      const membersData: WorkspaceMember[] =
+        await workspacesAPI.getWorkspaceMembers(workspaceId);
+      setWorkspaceMembers(membersData);
+    } catch (error) {
+      console.error("Failed to load workspace members:", error);
+      setWorkspaceMembers([]);
+    } finally {
+      setMembersLoading(false);
+    }
+  };
+
+  const handleSelectWorkspace = async (workspaceId: string) => {
+    if (workspaceId === activeWorkspaceId) return;
+
+    setShowMembersModal(false);
+    setWorkspaceMembers([]);
+    setActiveWorkspaceId(workspaceId);
+    await loadBoardsByWorkspace(workspaceId);
+  };
+
+  const handleOpenMembersModal = async () => {
+    if (!activeWorkspaceId) return;
+
+    setShowMembersModal(true);
+    await loadWorkspaceMembers(activeWorkspaceId);
+  };
 
   // Lọc boards theo search query
   const filteredBoards = boards.filter((board: any) =>
@@ -113,7 +210,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!selectedWorkspace) {
+    if (!selectedWorkspaceId) {
       alert("Vui lòng chọn không gian làm việc");
       return;
     }
@@ -121,14 +218,16 @@ export default function DashboardPage() {
     try {
       const boardData = {
         name: newBoardName.trim(),
-        workspace_id: parseInt(selectedWorkspace),
+        workspace_id: Number(selectedWorkspaceId),
         background: selectedBackground,
       };
 
       const newBoard = await boardsAPI.createBoard(boardData);
 
       // Cập nhật state boards
-      setBoards((prevBoards) => [...prevBoards, newBoard]);
+      if (selectedWorkspaceId === activeWorkspaceId) {
+        setBoards((prevBoards) => [...prevBoards, newBoard]);
+      }
 
       // Reset form và đóng modal
       setNewBoardName("");
@@ -144,36 +243,65 @@ export default function DashboardPage() {
 
   // Hàm tạo workspace mới
   const handleCreateWorkspace = async () => {
-    if (!newWorkspaceName.trim()) {
-      alert("Vui lòng nhập tên không gian làm việc");
+    const cleanedWorkspaceName = newWorkspaceName.trim().replace(/\s+/g, " ");
+    const normalizedWorkspaceName = normalizeWorkspaceName(cleanedWorkspaceName);
+
+    if (!normalizedWorkspaceName) {
+      setWorkspaceNameError("Vui long nhap ten khong gian lam viec");
       return;
     }
 
+    const isDuplicateInCurrentList = workspaces.some(
+      (workspace) =>
+        normalizeWorkspaceName(workspace.name ?? "") === normalizedWorkspaceName,
+    );
+
+    if (isDuplicateInCurrentList) {
+      setWorkspaceNameError(
+        "Ten khong gian lam viec da ton tai. Vui long nhap ten khac.",
+      );
+      return;
+    }
+
+    setWorkspaceNameError("");
     setCreatingWorkspace(true);
     try {
       const workspaceData = {
-        name: newWorkspaceName.trim(),
+        name: cleanedWorkspaceName,
       };
 
       const newWorkspace = await workspacesAPI.createWorkspace(workspaceData);
+      const newWorkspaceId = String(newWorkspace.id);
 
       // Cập nhật state workspaces
       setWorkspaces((prevWorkspaces) => [...prevWorkspaces, newWorkspace]);
 
       // Auto select newly created workspace
-      setWorkspace(newWorkspace);
-      setSelectedWorkspace(newWorkspace.id.toString());
+      setActiveWorkspaceId(newWorkspaceId);
+      setSelectedWorkspaceId(newWorkspaceId);
 
       // Load boards cho workspace mới
-      const boardsData = await boardsAPI.getBoardsByWorkspace(newWorkspace.id);
-      setBoards(boardsData);
+      await loadBoardsByWorkspace(newWorkspaceId);
 
       // Reset form và đóng modal
       setNewWorkspaceName("");
+      setWorkspaceNameError("");
       setShowCreateWorkspaceModal(false);
     } catch (error) {
       console.error("Failed to create workspace:", error);
-      alert("Có lỗi xảy ra khi tạo không gian làm việc. Vui lòng thử lại.");
+      const apiError = error as Error & { status?: number };
+      if (apiError.status === 409) {
+        setWorkspaceNameError(
+          "Ten khong gian lam viec da ton tai. Vui long nhap ten khac.",
+        );
+        return;
+      }
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Co loi xay ra khi tao khong gian lam viec. Vui long thu lai.",
+      );
     } finally {
       setCreatingWorkspace(false);
     }
@@ -184,6 +312,11 @@ export default function DashboardPage() {
     localStorage.removeItem("user");
     navigate("/login");
   };
+
+  const canCreateWorkspace =
+    !creatingWorkspace &&
+    !workspaceNameError &&
+    normalizeWorkspaceName(newWorkspaceName).length > 0;
 
   if (!currentUser) return null;
   if (loading) {
@@ -253,15 +386,45 @@ export default function DashboardPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-400 rounded-lg flex items-center justify-center text-white font-semibold text-sm">
-                {workspace?.name ? workspace.name.charAt(0) : "W"}
+                {displayedWorkspace?.name
+                  ? displayedWorkspace.name.charAt(0)
+                  : "W"}
               </div>
               <span className="text-sm font-medium text-gray-700 flex-1 truncate">
-                {workspace?.name ?? "Chưa có không gian làm việc"}
+                {workspaces.length === 0
+                  ? "Chưa có không gian làm việc"
+                  : displayedWorkspace?.name}
               </span>
             </div>
+            {workspaces.length > 1 && (
+              <div className="space-y-1 max-h-44 overflow-y-auto pr-1">
+                {workspaces
+                  .filter((ws) => String(ws.id) !== effectiveWorkspaceId)
+                  .map((ws) => {
+                    const workspaceId = String(ws.id);
+
+                    return (
+                      <button
+                        key={workspaceId}
+                        onClick={() => handleSelectWorkspace(workspaceId)}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition text-gray-600 hover:bg-gray-100"
+                      >
+                        <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-blue-400 rounded-md flex items-center justify-center text-white font-semibold text-xs">
+                          {ws.name?.charAt(0)?.toUpperCase() ?? "W"}
+                        </div>
+                        <span className="text-sm flex-1 truncate">{ws.name}</span>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
             <button
+              onClick={() => {
+                if (!effectiveWorkspaceId) return;
+                navigate(`/members?workspace=${effectiveWorkspaceId}`);
+              }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm"
-              disabled={!workspace}
+              disabled={!displayedWorkspace}
             >
               <Users size={16} />
               <span>Thành viên</span>
@@ -299,7 +462,11 @@ export default function DashboardPage() {
             {/* Right side */}
             <div className="flex items-center gap-4 ml-6">
               <button
-                onClick={() => setShowCreateWorkspaceModal(true)}
+                onClick={() => {
+                  setWorkspaceNameError("");
+                  setNewWorkspaceName("");
+                  setShowCreateWorkspaceModal(true);
+                }}
                 className={
                   "flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition bg-[#051836] text-white hover:shadow-lg hover:bg-[#051836cc]"
                 }
@@ -396,7 +563,12 @@ export default function DashboardPage() {
 
             {/* Create new board */}
             <button
-              onClick={() => setShowCreateBoardModal(true)}
+              onClick={() => {
+                if (effectiveWorkspaceId) {
+                  setSelectedWorkspaceId(effectiveWorkspaceId);
+                }
+                setShowCreateBoardModal(true);
+              }}
               className="h-32 rounded-xl bg-gray-100 hover:bg-gray-200 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 transition-all duration-200 hover:border-gray-400"
             >
               <Plus size={24} className="text-gray-500" />
@@ -536,8 +708,8 @@ export default function DashboardPage() {
                   Không gian làm việc
                 </label>
                 <select
-                  value={selectedWorkspace}
-                  onChange={(e) => setSelectedWorkspace(e.target.value)}
+                  value={selectedWorkspaceId}
+                  onChange={(e) => setSelectedWorkspaceId(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
                   {workspaces.length > 0 ? (
@@ -577,7 +749,10 @@ export default function DashboardPage() {
       {showCreateWorkspaceModal && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowCreateWorkspaceModal(false)}
+          onClick={() => {
+            setShowCreateWorkspaceModal(false);
+            setWorkspaceNameError("");
+          }}
         >
           <div
             className="bg-white rounded-xl shadow-2xl max-w-md w-full"
@@ -588,7 +763,10 @@ export default function DashboardPage() {
                 Tạo không gian làm việc mới
               </h2>
               <button
-                onClick={() => setShowCreateWorkspaceModal(false)}
+                onClick={() => {
+                  setShowCreateWorkspaceModal(false);
+                  setWorkspaceNameError("");
+                }}
                 className="p-2 hover:bg-gray-100 rounded-lg transition"
               >
                 <X size={20} className="text-gray-600" />
@@ -604,25 +782,55 @@ export default function DashboardPage() {
                 <input
                   type="text"
                   value={newWorkspaceName}
-                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setNewWorkspaceName(value);
+
+                    const normalizedValue = normalizeWorkspaceName(value);
+                    if (!normalizedValue) {
+                      setWorkspaceNameError("");
+                      return;
+                    }
+
+                    const isDuplicate = workspaces.some(
+                      (workspace) =>
+                        normalizeWorkspaceName(workspace.name ?? "") ===
+                        normalizedValue,
+                    );
+                    setWorkspaceNameError(
+                      isDuplicate
+                        ? "Ten khong gian lam viec da ton tai. Vui long nhap ten khac."
+                        : "",
+                    );
+                  }}
                   placeholder="Ví dụ: Dự án công ty"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 ${
+                    workspaceNameError
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-purple-500"
+                  }`}
                   autoFocus
                   disabled={creatingWorkspace}
                 />
+                {workspaceNameError && (
+                  <p className="mt-2 text-sm text-red-600">{workspaceNameError}</p>
+                )}
               </div>
             </div>
 
             <div className="p-6 border-t border-gray-200 flex gap-3">
               <button
                 onClick={handleCreateWorkspace}
-                disabled={creatingWorkspace}
+                disabled={!canCreateWorkspace}
                 className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {creatingWorkspace ? "Đang tạo..." : "Tạo không gian"}
               </button>
               <button
-                onClick={() => setShowCreateWorkspaceModal(false)}
+                onClick={() => {
+                  setShowCreateWorkspaceModal(false);
+                  setWorkspaceNameError("");
+                }}
                 disabled={creatingWorkspace}
                 className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -634,6 +842,80 @@ export default function DashboardPage() {
       )}
 
       {/* Modal thông tin cá nhân */}
+      {showMembersModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowMembersModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-lg w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-800">
+                Thanh vien workspace
+              </h2>
+              <button
+                onClick={() => setShowMembersModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {membersLoading ? (
+                <p className="text-sm text-gray-600">
+                  Dang tai danh sach thanh vien...
+                </p>
+              ) : workspaceMembers.length === 0 ? (
+                <p className="text-sm text-gray-600">
+                  Chua co thanh vien tham gia workspace nay.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {workspaceMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-purple-500 text-white flex items-center justify-center font-semibold">
+                        {member.name?.charAt(0)?.toUpperCase() ?? "U"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-800 truncate">
+                          {member.name || "Unknown user"}
+                        </p>
+                        <p className="text-sm text-gray-600 truncate">
+                          {member.email}
+                        </p>
+                        {member.phone && (
+                          <p className="text-sm text-gray-500 truncate">
+                            {member.phone}
+                          </p>
+                        )}
+                        <p className="text-xs text-[#051836] mt-1 uppercase tracking-wide">
+                          {member.roles.join(", ")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200">
+              <button
+                onClick={() => setShowMembersModal(false)}
+                className="w-full px-4 py-2.5 bg-[#051836] text-white rounded-lg font-medium hover:bg-[#051836cc] transition"
+              >
+                Dong
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showProfileModal && (
         <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"

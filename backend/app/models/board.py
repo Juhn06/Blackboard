@@ -9,6 +9,8 @@ class Board(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     background = Column(String)
+    # optional description/purpose of the board
+    description = Column(String, default=None)
 
     workspace_id = Column(Integer, ForeignKey("workspaces.id"))
     created_by = Column(Integer, ForeignKey("users.id"))

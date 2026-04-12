@@ -27,7 +27,36 @@ const authFetch = async (
   });
 
   if (!response.ok) {
-    throw new Error(`API Error: ${response.status}`);
+    let message = `API Error: ${response.status}`;
+    let detail: unknown = undefined;
+
+    try {
+      const errorData = await response.json();
+      detail = errorData?.detail;
+
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail.map((item) => item?.msg).filter(Boolean).join(", ");
+      } else if (typeof errorData?.message === "string") {
+        message = errorData.message;
+      }
+    } catch {
+      // Keep fallback message if response body is not JSON
+    }
+
+    const error = new Error(message) as Error & {
+      status?: number;
+      detail?: unknown;
+    };
+    error.name = "APIError";
+    error.status = response.status;
+    error.detail = detail;
+    throw error;
+  }
+
+  if (response.status === 204) {
+    return null;
   }
 
   return response.json();
@@ -84,6 +113,10 @@ export const boardsAPI = {
     return authFetch(`/boards/${boardId}`);
   },
 
+  getBoardMembers: async (boardId: string) => {
+    return authFetch(`/boards/${boardId}/members`);
+  },
+
   getBoardsByWorkspace: async (workspaceId: string) => {
     return authFetch(`/boards/workspace/${workspaceId}`);
   },
@@ -110,6 +143,32 @@ export const boardsAPI = {
     return authFetch(`/boards/${boardId}`, {
       method: "DELETE",
     });
+  },
+
+  addBoardMember: async (memberData: {
+    board_id: number;
+    user_id?: number;
+    email?: string;
+    role?: "admin" | "member";
+  }) => {
+    return authFetch("/boards/add-member", {
+      method: "POST",
+      body: JSON.stringify(memberData),
+    });
+  },
+
+  removeBoardMember: async (memberData: {
+    board_id: number;
+    user_id: number;
+  }) => {
+    return authFetch("/boards/remove-member", {
+      method: "POST",
+      body: JSON.stringify(memberData),
+    });
+  },
+
+  getBoardActivities: async (boardId: string) => {
+    return authFetch(`/boards/${boardId}/activities`);
   },
 };
 
@@ -173,12 +232,31 @@ export const cardsAPI = {
       method: "DELETE",
     });
   },
+  // Card members
+  getCardMembers: async (cardId: string) => {
+    return authFetch(`/cards/members/${cardId}`);
+  },
+  addCardMember: async (cardId: string, data: { user_id?: number; email?: string }) => {
+    return authFetch(`/cards/members/${cardId}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+  removeCardMember: async (cardId: string, userId: number) => {
+    return authFetch(`/cards/members/${cardId}/${userId}`, {
+      method: "DELETE",
+    });
+  },
 };
 
 // Workspaces API
 export const workspacesAPI = {
   getWorkspaces: async () => {
     return authFetch("/workspaces/");
+  },
+
+  getWorkspaceMembers: async (workspaceId: string) => {
+    return authFetch(`/workspaces/${workspaceId}/members`);
   },
 
   createWorkspace: async (workspaceData: { name: string }) => {

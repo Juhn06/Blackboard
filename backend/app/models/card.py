@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Text, JSON
 from ..database import Base
 
 
@@ -20,3 +20,5 @@ class Card(Base):
     list_id = Column(Integer, ForeignKey("lists.id"))
 
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    labels = Column(JSON, nullable=True)  # Add labels field to store a list of labels

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
-from typing import Optional
-from datetime import datetime
+from typing import List, Optional
+
 
 class CardCreate(BaseModel):
     title: str
@@ -9,17 +9,19 @@ class CardCreate(BaseModel):
     due_date: Optional[str] = None
     due_time: Optional[str] = None
     assignee_id: Optional[int] = None
+    labels: Optional[List[str | int]] = None  # support legacy label-id and text labels
 
 
 class CardUpdate(BaseModel):
-    title: Optional[str]
-    description: Optional[str]
-    due_date: Optional[str]
-    due_time: Optional[str]
-    completed: Optional[bool]
-    position: Optional[int]
-    list_id: Optional[int]
-    assignee_id: Optional[int]
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[str] = None
+    due_time: Optional[str] = None
+    completed: Optional[bool] = None
+    position: Optional[int] = None
+    list_id: Optional[int] = None
+    assignee_id: Optional[int] = None
+    labels: Optional[List[str | int]] = None  # support legacy label-id and text labels
 
 
 class CardOut(BaseModel):
@@ -32,6 +34,7 @@ class CardOut(BaseModel):
     position: int
     list_id: int
     assignee_id: Optional[int]
+    labels: Optional[List[str | int]]
 
     class Config:
         from_attributes = True
