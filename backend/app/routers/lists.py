@@ -7,6 +7,7 @@ from ..database import get_db
 from ..models.activity import Activity
 from ..models.board import Board, BoardMember
 from ..models.list import List
+from ..models.workspace import Workspace, WorkspaceMember
 from ..schemas.list import ListCreate, ListUpdate
 
 router = APIRouter()
@@ -39,6 +40,50 @@ def _assert_board_access(db: Session, board_id: int, user_id: int) -> None:
         return
 
     raise HTTPException(status_code=403, detail="You do not have access to this board")
+
+
+def _get_workspace_member(db: Session, workspace_id: int, user_id: int) -> WorkspaceMember | None:
+    return db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == user_id,
+    ).first()
+
+
+def _is_admin_role(role: str | None) -> bool:
+    return (role or "member").strip().lower() in {"admin", "owner"}
+
+
+def _is_workspace_admin(db: Session, workspace: Workspace, user_id: int) -> bool:
+    if workspace.owner_id == user_id:
+        return True
+
+    workspace_member = _get_workspace_member(db, workspace.id, user_id)
+    return bool(workspace_member and _is_admin_role(workspace_member.role))
+
+
+def _assert_board_admin(db: Session, board_id: int, user_id: int) -> None:
+    board = db.query(Board).filter(Board.id == board_id).first()
+    if not board:
+        raise HTTPException(status_code=404, detail="Board not found")
+
+    if board.created_by == user_id:
+        return
+
+    board_member = db.query(BoardMember).filter(
+        BoardMember.board_id == board.id,
+        BoardMember.user_id == user_id,
+    ).first()
+    if board_member and _is_admin_role(board_member.role):
+        return
+
+    workspace = db.query(Workspace).filter(Workspace.id == board.workspace_id).first()
+    if workspace and _is_workspace_admin(db, workspace, user_id):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Only board or workspace admin can perform this action",
+    )
 
 
 def _log_activity(
@@ -173,7 +218,7 @@ def delete_list(
     user=Depends(get_current_user)
 ):
     list_item = _get_list_or_404(db, list_id)
-    _assert_board_access(db, list_item.board_id, user.id)
+    _assert_board_admin(db, list_item.board_id, user.id)
     deleted_title = list_item.title
     deleted_board_id = list_item.board_id
 

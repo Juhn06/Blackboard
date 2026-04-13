@@ -1,7 +1,12 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
-import { lists, boards } from "../data/mockData";
-import { cardsAPI } from "../services/api";
+﻿import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router";
+import {
+  boardsAPI,
+  cardsAPI,
+  listsAPI,
+  userAPI,
+  workspacesAPI,
+} from "../services/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,41 +16,139 @@ import {
 
 export default function PlannerPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentDate, setCurrentDate] = useState(new Date());
 
   // Load cards từ API để đồng bộ với board
+  const [loadingData, setLoadingData] = useState(true);
+  const [boards, setBoards] = useState<any[]>([]);
+  const [lists, setLists] = useState<any[]>([]);
   const [cards, setCards] = useState<any[]>([]);
 
-  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const [selectedCard, setSelectedCard] = useState<number | null>(null);
+
+  const getCardListId = (card: any): number | null => {
+    const raw = card?.list_id ?? card?.listId;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const getListBoardId = (list: any): number | null => {
+    const raw = list?.board_id ?? list?.boardId;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const getCardAssigneeId = (card: any): number | null => {
+    const raw = card?.assignee_id ?? card?.assigneeId;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
 
   // Load cards từ API
   useEffect(() => {
-    const loadCards = async () => {
+    const loadPlannerData = async () => {
       try {
-        // Load all cards from all boards
-        const allCards: any[] = [];
-        for (const board of boards) {
-          const boardLists = lists.filter((l) => l.boardId === board.id);
-          for (const list of boardLists) {
-            const cardsData = await cardsAPI.getCardsByList(list.id.toString());
-            allCards.push(...cardsData);
+        const me = await userAPI.me();
+        const currentUserId = Number(me?.id);
+
+        const workspaceData = await workspacesAPI.getWorkspaces();
+        if (workspaceData.length === 0) {
+          setBoards([]);
+          setLists([]);
+          setCards([]);
+          return;
+        }
+
+        const queryParams = new URLSearchParams(location.search);
+        const queryWorkspaceId = queryParams.get("workspace") ?? "";
+        const hasQueryWorkspace = workspaceData.some(
+          (workspace: any) => String(workspace.id) === queryWorkspaceId,
+        );
+        const effectiveWorkspaceId = hasQueryWorkspace
+          ? queryWorkspaceId
+          : String(workspaceData[0].id);
+
+        if (queryWorkspaceId !== effectiveWorkspaceId) {
+          navigate(`/planner?workspace=${effectiveWorkspaceId}`, { replace: true });
+        }
+
+        const workspaceBoards = await boardsAPI.getBoardsByWorkspace(
+          effectiveWorkspaceId,
+        );
+        setBoards(workspaceBoards);
+
+        const listsByBoard = await Promise.all(
+          workspaceBoards.map((board: any) =>
+            listsAPI.getListsByBoard(String(board.id)),
+          ),
+        );
+        const allLists = listsByBoard.flat();
+        setLists(allLists);
+
+        const cardsByList = await Promise.all(
+          allLists.map((list: any) => cardsAPI.getCardsByList(String(list.id))),
+        );
+        const allCards = cardsByList.flat();
+
+        const cardMembersByCardId = await Promise.all(
+          allCards.map(async (card: any) => {
+            const cardId = Number(card?.id);
+            if (!Number.isFinite(cardId)) {
+              return [cardId, []] as const;
+            }
+
+            try {
+              const members = await cardsAPI.getCardMembers(String(cardId));
+              const memberIds = Array.isArray(members)
+                ? members
+                    .map((member: any) => Number(member?.id))
+                    .filter((memberId: number) => Number.isFinite(memberId))
+                : [];
+              return [cardId, memberIds] as const;
+            } catch {
+              return [cardId, []] as const;
+            }
+          }),
+        );
+
+        const memberMap = new Map<number, number[]>();
+        cardMembersByCardId.forEach(([cardId, memberIds]) => {
+          if (Number.isFinite(cardId)) {
+            memberMap.set(cardId, memberIds);
           }
-        }
-        setCards(allCards);
+        });
+
+        const assignedCards = allCards.filter((card: any) => {
+          if (!Number.isFinite(currentUserId)) return false;
+
+          const cardId = Number(card?.id);
+          const isCardMember = (memberMap.get(cardId) || []).includes(currentUserId);
+          const isLegacyAssignee = getCardAssigneeId(card) === currentUserId;
+          return isCardMember || isLegacyAssignee;
+        });
+
+        setCards(assignedCards);
       } catch (error) {
-        console.error("Failed to load cards:", error);
-        // Fallback to localStorage
-        const saved = localStorage.getItem("blackboard_cards");
-        if (saved) {
-          setCards(JSON.parse(saved));
+        console.error("Failed to load planner data:", error);
+        setBoards([]);
+        setLists([]);
+        setCards([]);
+        const apiError = error as Error & { status?: number };
+        if (apiError.status === 401 || apiError.status === 403) {
+          navigate("/login");
         }
+      } finally {
+        setLoadingData(false);
       }
     };
 
-    loadCards();
-  }, []);
+    void loadPlannerData();
+  }, [location.search, navigate]);
 
-  const selectedCardData = cards.find((c: any) => c.id === selectedCard);
+  const selectedCardData = cards.find(
+    (c: any) => Number(c.id) === Number(selectedCard),
+  );
 
   const parseDueDate = (value?: string | null) => {
     if (!value) return null;
@@ -174,7 +277,7 @@ export default function PlannerPage() {
   };
 
   // Hàm cập nhật card
-  const updateCard = async (cardId: string, updates: any) => {
+  const updateCard = async (cardId: number, updates: any) => {
     const payload: Record<string, any> = {};
 
     if (typeof updates.title === "string") {
@@ -192,12 +295,12 @@ export default function PlannerPage() {
     }
 
     try {
-      const updatedCard = await cardsAPI.updateCard(cardId, payload);
+      const updatedCard = await cardsAPI.updateCard(String(cardId), payload);
       const mergedUpdates = { ...payload, ...(updatedCard || {}) };
 
       // Update cards state with updated card
       const updatedCards = cards.map((c: any) =>
-        c.id === parseInt(cardId) ? { ...c, ...mergedUpdates } : c,
+        c.id === cardId ? { ...c, ...mergedUpdates } : c,
       );
       setCards(updatedCards);
       localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
@@ -205,7 +308,7 @@ export default function PlannerPage() {
       console.error("Failed to update card:", error);
       // Fallback to local update
       const updatedCards = cards.map((c: any) =>
-        c.id === parseInt(cardId) ? { ...c, ...payload } : c,
+        c.id === cardId ? { ...c, ...payload } : c,
       );
       setCards(updatedCards);
       localStorage.setItem("blackboard_cards", JSON.stringify(updatedCards));
@@ -345,17 +448,17 @@ export default function PlannerPage() {
                             <div className="space-y-1">
                               {dayCards.map((card: any) => {
                                 const list = lists.find(
-                                  (l) => l.id === (card.listId ?? card.list_id),
+                                  (l) => l.id === getCardListId(card),
                                 );
                                 const board = boards.find(
-                                  (b) => b.id === list?.boardId,
+                                  (b) => b.id === getListBoardId(list),
                                 );
                                 const cardStyles = getCardStyles(card);
 
                                 return (
                                   <div
                                     key={card.id}
-                                    onClick={() => setSelectedCard(card.id)}
+                                    onClick={() => setSelectedCard(Number(card.id))}
                                     className={`${cardStyles} border text-xs px-2 py-1.5 rounded-lg cursor-pointer hover:opacity-80 transition`}
                                     title={card.title}
                                   >
@@ -405,15 +508,15 @@ export default function PlannerPage() {
               <div className="space-y-3">
                 {todayCards.map((card: any) => {
                     const list = lists.find(
-                      (l) => l.id === (card.listId ?? card.list_id),
+                      (l) => l.id === getCardListId(card),
                     );
-                    const board = boards.find((b) => b.id === list?.boardId);
+                    const board = boards.find((b) => b.id === getListBoardId(list));
                     const cardStyles = getCardStyles(card);
 
                     return (
                       <button
                         key={card.id}
-                        onClick={() => setSelectedCard(card.id)}
+                        onClick={() => setSelectedCard(Number(card.id))}
                         className={`w-full text-left p-3 border rounded-lg transition ${cardStyles}`}
                       >
                         {/* <div className="flex flex-wrap gap-1 mb-2">
@@ -449,16 +552,16 @@ export default function PlannerPage() {
                   .slice(0, 5)
                   .map((card: any) => {
                     const list = lists.find(
-                      (l) => l.id === (card.listId ?? card.list_id),
+                      (l) => l.id === getCardListId(card),
                     );
-                    const board = boards.find((b) => b.id === list?.boardId);
+                    const board = boards.find((b) => b.id === getListBoardId(list));
                     const cardStyles = getCardStyles(card);
                     const dueDate = parseDueDate(card.due_date);
 
                     return (
                       <button
                         key={card.id}
-                        onClick={() => setSelectedCard(card.id)}
+                        onClick={() => setSelectedCard(Number(card.id))}
                         className={`w-full text-left p-3 border rounded-lg transition ${cardStyles}`}
                       >
                         {/* <div className="flex flex-wrap gap-1 mb-2">
@@ -489,15 +592,22 @@ export default function PlannerPage() {
             {/* Mini boards overview */}
             <div className="bg-white rounded-xl shadow-sm p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-4">
-                Bảng của bạn
+                Bảng bạn tham gia
               </h3>
               <div className="space-y-2">
-                {boards.slice(0, 4).map((board) => {
+                {loadingData ? (
+                  <p className="text-sm text-gray-500">Đang tải danh sách bảng...</p>
+                ) : boards.length === 0 ? (
+                  <p className="text-sm text-gray-500">
+                    Chưa có bảng nào trong workspace này.
+                  </p>
+                ) : (
+                  boards.slice(0, 4).map((board) => {
                   const boardCards = cards.filter((card: any) => {
                     const list = lists.find(
-                      (l) => l.id === (card.listId ?? card.list_id),
+                      (l) => l.id === getCardListId(card),
                     );
-                    return list?.boardId === board.id;
+                    return getListBoardId(list) === Number(board.id);
                   });
                   const completedCards = boardCards.filter(
                     (c: any) => c.completed,
@@ -525,7 +635,8 @@ export default function PlannerPage() {
                       </div>
                     </button>
                   );
-                })}
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -572,7 +683,7 @@ export default function PlannerPage() {
                           lists.find(
                             (l) =>
                               l.id ===
-                              (selectedCardData.listId ?? selectedCardData.list_id),
+                              getCardListId(selectedCardData),
                           )?.title
                         }
                       </span>
@@ -687,9 +798,9 @@ export default function PlannerPage() {
                     const list = lists.find(
                       (l) =>
                         l.id ===
-                        (selectedCardData.listId ?? selectedCardData.list_id),
+                        getCardListId(selectedCardData),
                     );
-                    const board = boards.find((b) => b.id === list?.boardId);
+                    const board = boards.find((b) => b.id === getListBoardId(list));
                     if (board) {
                       navigate(`/board/${board.id}`);
                     }
@@ -706,3 +817,6 @@ export default function PlannerPage() {
     </div>
   );
 }
+
+
+

@@ -8,6 +8,8 @@ class Workspace(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
+    description = Column(String, nullable=True)
+    icon = Column(String, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
 
     created_at = Column(DateTime, default=datetime.utcnow)

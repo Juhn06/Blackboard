@@ -65,6 +65,13 @@ def _get_board_member(db: Session, board_id: int, user_id: int) -> BoardMember |
     ).first()
 
 
+def _get_workspace_member(db: Session, workspace_id: int, user_id: int) -> WorkspaceMember | None:
+    return db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == user_id,
+    ).first()
+
+
 def _is_admin_role(role: str | None) -> bool:
     return (role or "member").strip().lower() in {"admin", "owner"}
 
@@ -78,6 +85,17 @@ def _get_board_admin_user_ids(db: Session, board: Board) -> set[int]:
         if _is_admin_role(role):
             admin_ids.add(user_id)
     return admin_ids
+
+
+def _is_workspace_admin(db: Session, workspace: Workspace, user_id: int) -> bool:
+    if workspace.owner_id == user_id:
+        return True
+
+    workspace_member = _get_workspace_member(db, workspace.id, user_id)
+    if workspace_member and _is_admin_role(workspace_member.role):
+        return True
+
+    return False
 
 
 def _format_user_label(target_user: User) -> str:
@@ -131,13 +149,25 @@ def _assert_board_admin(db: Session, board: Board, user_id: int) -> None:
     if member and _is_admin_role(member.role):
         return
 
-    raise HTTPException(status_code=403, detail="Only board admin can perform this action")
+    workspace = _get_workspace_or_404(db, board.workspace_id)
+    if _is_workspace_admin(db, workspace, user_id):
+        return
+
+    raise HTTPException(status_code=403, detail="Only board or workspace admin can perform this action")
 
 
-def _log_activity(db: Session, board_id: int | None, user_id: int | None, action: str, details: str | None = None):
+def _log_activity(
+    db: Session,
+    board_id: int | None,
+    user_id: int | None,
+    action: str,
+    details: str | None = None,
+    workspace_id: int | None = None,
+):
     try:
         entry = Activity(
             board_id=board_id,
+            workspace_id=workspace_id,
             user_id=user_id,
             action=action,
             details=details
@@ -162,8 +192,8 @@ def create_board(
         raise HTTPException(status_code=409, detail="Ten board da ton tai")
 
     workspace = _get_workspace_or_404(db, data.workspace_id)
-    if not _has_workspace_access(db, workspace, user.id):
-        raise HTTPException(status_code=403, detail="You do not have access to this workspace")
+    if not _is_workspace_admin(db, workspace, user.id):
+        raise HTTPException(status_code=403, detail="Only workspace admin can create boards")
 
     board = Board(
         name=normalized_name,
@@ -185,7 +215,14 @@ def create_board(
             )
         )
         db.commit()
-    _log_activity(db, board.id, user.id, "board_created", f"Board '{board.name}' created")
+    _log_activity(
+        db,
+        board.id,
+        user.id,
+        "board_created",
+        f"Board '{board.name}' created",
+        workspace_id=board.workspace_id,
+    )
 
     return {
         "id": board.id,
@@ -247,7 +284,8 @@ def add_member(
                 board.id,
                 user.id,
                 "member_role_updated",
-                f"Updated role: {target_user_label} -> {member_role}"
+                f"Updated role: {target_user_label} -> {member_role}",
+                workspace_id=board.workspace_id,
             )
         return {
             "id": existing_member.id,
@@ -277,7 +315,8 @@ def add_member(
         board.id,
         user.id,
         "member_added",
-        f"Added member: {target_user_label} ({member_role})"
+        f"Added member: {target_user_label} ({member_role})",
+        workspace_id=board.workspace_id,
     )
     return {
         "id": new_member.id,
@@ -303,17 +342,20 @@ def get_boards(
     if not _has_workspace_access(db, workspace, user.id):
         raise HTTPException(status_code=403, detail="You do not have access to this workspace")
 
-    boards = db.query(Board)\
-        .outerjoin(BoardMember, BoardMember.board_id == Board.id)\
-        .filter(
-            Board.workspace_id == workspace_id,
-            or_(
-                Board.created_by == user.id,
-                BoardMember.user_id == user.id
-            )
-        )\
-        .distinct()\
-        .all()
+    if _is_workspace_admin(db, workspace, user.id):
+        boards = db.query(Board).filter(Board.workspace_id == workspace_id).all()
+    else:
+        boards = db.query(Board)\
+            .outerjoin(BoardMember, BoardMember.board_id == Board.id)\
+            .filter(
+                Board.workspace_id == workspace_id,
+                or_(
+                    Board.created_by == user.id,
+                    BoardMember.user_id == user.id
+                )
+            )\
+            .distinct()\
+            .all()
 
     return boards
 
@@ -390,7 +432,8 @@ def remove_member(
         board.id,
         user.id,
         "member_removed",
-        f"Removed member: {target_user_label} ({removed_role})"
+        f"Removed member: {target_user_label} ({removed_role})",
+        workspace_id=board.workspace_id,
     )
     return {"message": "member removed"}
 
@@ -447,7 +490,8 @@ def update_board(
             board.id,
             user.id,
             "board_renamed",
-            f"Renamed board: '{old_name}' -> '{board.name}'"
+            f"Renamed board: '{old_name}' -> '{board.name}'",
+            workspace_id=board.workspace_id,
         )
 
     if old_background != board.background:
@@ -456,7 +500,8 @@ def update_board(
             board.id,
             user.id,
             "board_background_changed",
-            "Updated board background"
+            "Updated board background",
+            workspace_id=board.workspace_id,
         )
 
     if old_description != board.description:
@@ -465,7 +510,8 @@ def update_board(
             board.id,
             user.id,
             "board_updated",
-            "Updated board description"
+            "Updated board description",
+            workspace_id=board.workspace_id,
         )
 
     return board
@@ -480,7 +526,14 @@ def delete_board(
     board = _get_board_or_404(db, board_id)
     _assert_board_admin(db, board, user.id)
 
-    _log_activity(db, board.id, user.id, "board_deleted", f"Board '{board.name}' deleted")
+    _log_activity(
+        db,
+        board.id,
+        user.id,
+        "board_deleted",
+        f"Board '{board.name}' deleted",
+        workspace_id=board.workspace_id,
+    )
     db.delete(board)
     db.commit()
     return {"message": "deleted"}

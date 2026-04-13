@@ -142,7 +142,7 @@ export default function MembersPage() {
   if (loading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-purple-50">
-        <p className="text-gray-700">Dang tai thanh vien...</p>
+        <p className="text-gray-700">Đang tải thành viên...</p>
       </div>
     );
   }
@@ -163,25 +163,31 @@ export default function MembersPage() {
               className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition text-gray-600 hover:bg-gray-100"
             >
               <LayoutGrid size={20} />
-              <span>Bang</span>
+              <span>Bảng</span>
             </button>
             <button
-              onClick={() => navigate("/planner")}
+              onClick={() =>
+                navigate(
+                  activeWorkspaceId
+                    ? `/planner?workspace=${activeWorkspaceId}`
+                    : "/planner",
+                )
+              }
               className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition text-gray-600 hover:bg-gray-100"
             >
               <Calendar size={20} />
-              <span>Trinh lap ke hoach</span>
+              <span>Trình lập kế hoạch</span>
             </button>
             <button className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition bg-[#0055bc42] text-[#051836]">
               <Users size={20} />
-              <span>Thanh vien</span>
+              <span>Thành viên</span>
             </button>
           </nav>
         </div>
 
         <div className="mt-8 pt-8 border-t border-gray-200">
           <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">
-            Khong gian lam viec
+            Không gian làm việc
           </h3>
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50">
@@ -189,7 +195,7 @@ export default function MembersPage() {
                 {activeWorkspace?.name ? activeWorkspace.name.charAt(0) : "W"}
               </div>
               <span className="text-sm font-medium text-gray-700 flex-1 truncate">
-                {activeWorkspace?.name ?? "Chua co khong gian lam viec"}
+                {activeWorkspace?.name ?? "Chưa có không gian làm việc"}
               </span>
             </div>
             {workspaces.length > 1 && (
@@ -213,9 +219,16 @@ export default function MembersPage() {
                   })}
               </div>
             )}
-            <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm">
+            <button
+              onClick={() => {
+                if (!activeWorkspaceId) return;
+                navigate(`/settings?workspace=${activeWorkspaceId}`);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm"
+              disabled={!activeWorkspace}
+            >
               <Settings size={16} />
-              <span>Cai dat</span>
+              <span>Cài đặt</span>
             </button>
           </div>
         </div>
@@ -234,7 +247,7 @@ export default function MembersPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tim thanh vien theo ten, email, vai tro..."
+                  placeholder="Tìm thành viên theo tên, email, vai trò..."
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white transition"
                 />
               </div>
@@ -245,29 +258,29 @@ export default function MembersPage() {
               className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium transition text-red-600 border border-red-200 hover:bg-red-50"
             >
               <LogOut size={18} />
-              <span>Dang xuat</span>
+              <span>Đăng xuất</span>
             </button>
           </div>
         </header>
 
         <div className="p-8">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Thanh vien</h1>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Thành viên</h1>
             <p className="text-gray-600">
               {activeWorkspace
-                ? `Danh sach thanh vien tham gia "${activeWorkspace.name}"`
-                : "Chua co khong gian lam viec"}
+                ? `Danh sách thành viên tham gia "${activeWorkspace.name}"`
+                : "Chưa có không gian làm việc"}
             </p>
           </div>
 
           {membersLoading ? (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <p className="text-gray-600">Dang tai danh sach thanh vien...</p>
+              <p className="text-gray-600">Đang tải danh sách thành viên...</p>
             </div>
           ) : filteredMembers.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <p className="text-gray-600">
-                Khong tim thay thanh vien nao trong workspace nay.
+                Không tìm thấy thành viên nào trong workspace này.
               </p>
             </div>
           ) : (
@@ -283,7 +296,7 @@ export default function MembersPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-800 truncate">
-                        {member.name || "Unknown user"}
+                        {member.name || "Người dùng không xác định"}
                       </p>
                       <p className="text-sm text-gray-600 truncate">{member.email}</p>
                       {member.phone && (

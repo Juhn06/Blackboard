@@ -247,7 +247,7 @@ export default function DashboardPage() {
     const normalizedWorkspaceName = normalizeWorkspaceName(cleanedWorkspaceName);
 
     if (!normalizedWorkspaceName) {
-      setWorkspaceNameError("Vui long nhap ten khong gian lam viec");
+      setWorkspaceNameError("Vui lòng nhập tên không gian làm việc");
       return;
     }
 
@@ -258,7 +258,7 @@ export default function DashboardPage() {
 
     if (isDuplicateInCurrentList) {
       setWorkspaceNameError(
-        "Ten khong gian lam viec da ton tai. Vui long nhap ten khac.",
+        "Tên không gian làm việc đã tồn tại. Vui lòng nhập tên khác.",
       );
       return;
     }
@@ -292,7 +292,7 @@ export default function DashboardPage() {
       const apiError = error as Error & { status?: number };
       if (apiError.status === 409) {
         setWorkspaceNameError(
-          "Ten khong gian lam viec da ton tai. Vui long nhap ten khac.",
+          "Tên không gian làm việc đã tồn tại. Vui lòng nhập tên khác.",
         );
         return;
       }
@@ -300,7 +300,7 @@ export default function DashboardPage() {
       alert(
         error instanceof Error
           ? error.message
-          : "Co loi xay ra khi tao khong gian lam viec. Vui long thu lai.",
+          : "Có lỗi xảy ra khi tạo không gian làm việc. Vui lòng thử lại.",
       );
     } finally {
       setCreatingWorkspace(false);
@@ -357,7 +357,13 @@ export default function DashboardPage() {
               <span>Bảng</span>
             </button>
             <button
-              onClick={() => navigate("/planner")}
+              onClick={() =>
+                navigate(
+                  effectiveWorkspaceId
+                    ? `/planner?workspace=${effectiveWorkspaceId}`
+                    : "/planner",
+                )
+              }
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition ${
                 location.pathname === "/planner"
                   ? "bg-purple-100 text-purple-700"
@@ -429,7 +435,14 @@ export default function DashboardPage() {
               <Users size={16} />
               <span>Thành viên</span>
             </button>
-            <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm">
+            <button
+              onClick={() => {
+                if (!effectiveWorkspaceId) return;
+                navigate(`/settings?workspace=${effectiveWorkspaceId}`);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition text-sm"
+              disabled={!displayedWorkspace}
+            >
               <Settings size={16} />
               <span>Cài đặt</span>
             </button>
@@ -799,7 +812,7 @@ export default function DashboardPage() {
                     );
                     setWorkspaceNameError(
                       isDuplicate
-                        ? "Ten khong gian lam viec da ton tai. Vui long nhap ten khac."
+                        ? "Tên không gian làm việc đã tồn tại. Vui lòng nhập tên khác."
                         : "",
                     );
                   }}
@@ -852,9 +865,9 @@ export default function DashboardPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-800">
-                Thanh vien workspace
-              </h2>
+                <h2 className="text-xl font-bold text-gray-800">
+                  Thành viên workspace
+                </h2>
               <button
                 onClick={() => setShowMembersModal(false)}
                 className="p-2 hover:bg-gray-100 rounded-lg transition"
@@ -866,11 +879,11 @@ export default function DashboardPage() {
             <div className="p-6">
               {membersLoading ? (
                 <p className="text-sm text-gray-600">
-                  Dang tai danh sach thanh vien...
+                  Đang tải danh sách thành viên...
                 </p>
               ) : workspaceMembers.length === 0 ? (
                 <p className="text-sm text-gray-600">
-                  Chua co thanh vien tham gia workspace nay.
+                  Chưa có thành viên tham gia workspace này.
                 </p>
               ) : (
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
@@ -909,7 +922,7 @@ export default function DashboardPage() {
                 onClick={() => setShowMembersModal(false)}
                 className="w-full px-4 py-2.5 bg-[#051836] text-white rounded-lg font-medium hover:bg-[#051836cc] transition"
               >
-                Dong
+                Đóng
               </button>
             </div>
           </div>

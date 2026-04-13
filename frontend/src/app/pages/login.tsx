@@ -17,7 +17,7 @@ export default function LoginPage() {
     setSubmitting(true);
 
     if (isRegisterMode && !name.trim()) {
-      setError("Vui long nhap ten");
+      setError("Vui lòng nhập tên");
       setSubmitting(false);
       return;
     }
@@ -32,8 +32,8 @@ export default function LoginPage() {
     } catch (err) {
       setError(
         isRegisterMode
-          ? "Dang ky that bai. Email co the da ton tai."
-          : "Email hoac mat khau khong dung",
+          ? "Đăng ký thất bại. Email có thể đã tồn tại."
+          : "Email hoặc mật khẩu không đúng",
       );
     } finally {
       setSubmitting(false);
@@ -67,7 +67,7 @@ export default function LoginPage() {
           </div>
           <h1 className="text-4xl font-bold text-gray-800 mb-2">BlackBoard</h1>
           <p className="text-gray-600">
-            {isRegisterMode ? "Tao tai khoan moi" : "Quan ly cong viec hieu qua"}
+            {isRegisterMode ? "Tạo tài khoản mới" : "Quản lý công việc hiệu quả"}
           </p>
         </div>
 
@@ -85,14 +85,14 @@ export default function LoginPage() {
                   htmlFor="name"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                  Ten
+                  Tên
                 </label>
                 <input
                   id="name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Nhap ten cua ban"
+                  placeholder="Nhập tên của bạn"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                   required
                 />
@@ -122,7 +122,7 @@ export default function LoginPage() {
                 htmlFor="password"
                 className="block text-sm font-medium text-gray-700 mb-2"
               >
-                Mat khau
+                Mật khẩu
               </label>
               <input
                 id="password"
@@ -142,11 +142,11 @@ export default function LoginPage() {
             >
               {submitting
                 ? isRegisterMode
-                  ? "Dang tao tai khoan..."
-                  : "Dang dang nhap..."
+                  ? "Đang tạo tài khoản..."
+                  : "Đang đăng nhập..."
                 : isRegisterMode
-                  ? "Dang ky"
-                  : "Dang nhap"}
+                  ? "Đăng ký"
+                  : "Đăng nhập"}
             </button>
           </form>
 
@@ -156,7 +156,7 @@ export default function LoginPage() {
                 <div className="w-full border-t border-gray-300"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Hoac</span>
+                <span className="px-2 bg-white text-gray-500">Hoặc</span>
               </div>
             </div>
 
@@ -183,7 +183,7 @@ export default function LoginPage() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              <span className="text-gray-700 font-medium">Dien tai khoan demo</span>
+              <span className="text-gray-700 font-medium">Điền tài khoản demo</span>
             </button>
           </div>
 
@@ -197,8 +197,8 @@ export default function LoginPage() {
               className="text-sm text-purple-600 hover:text-purple-700 font-semibold"
             >
               {isRegisterMode
-                ? "Da co tai khoan? Dang nhap"
-                : "Chua co tai khoan? Dang ky ngay"}
+                ? "Đã có tài khoản? Đăng nhập"
+                : "Chưa có tài khoản? Đăng ký ngay"}
             </button>
           </div>
         </div>

@@ -8,6 +8,7 @@ class Activity(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     board_id = Column(Integer, ForeignKey("boards.id"), nullable=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     action = Column(String)
     details = Column(Text, nullable=True)

@@ -4,6 +4,7 @@ import DashboardPage from "./pages/dashboard";
 import BoardPage from "./pages/board";
 import PlannerPage from "./pages/planner";
 import MembersPage from "./pages/members";
+import SettingsPage from "./pages/settings";
 
 export const router = createBrowserRouter([
   {
@@ -29,5 +30,9 @@ export const router = createBrowserRouter([
   {
     path: "/members",
     Component: MembersPage,
+  },
+  {
+    path: "/settings",
+    Component: SettingsPage,
   },
 ]);

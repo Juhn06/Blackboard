@@ -255,14 +255,79 @@ export const workspacesAPI = {
     return authFetch("/workspaces/");
   },
 
+  getWorkspace: async (workspaceId: string) => {
+    return authFetch(`/workspaces/${workspaceId}`);
+  },
+
   getWorkspaceMembers: async (workspaceId: string) => {
     return authFetch(`/workspaces/${workspaceId}/members`);
   },
 
-  createWorkspace: async (workspaceData: { name: string }) => {
+  createWorkspace: async (workspaceData: {
+    name: string;
+    description?: string | null;
+    icon?: string | null;
+  }) => {
     return authFetch("/workspaces/", {
       method: "POST",
       body: JSON.stringify(workspaceData),
+    });
+  },
+
+  updateWorkspace: async (
+    workspaceId: string,
+    workspaceData: { name: string; description?: string | null; icon?: string | null },
+  ) => {
+    return authFetch(`/workspaces/${workspaceId}`, {
+      method: "PUT",
+      body: JSON.stringify(workspaceData),
+    });
+  },
+
+  addWorkspaceMember: async (
+    workspaceId: string,
+    memberData: { user_id?: number; email?: string; role?: "admin" | "member" },
+  ) => {
+    return authFetch(`/workspaces/${workspaceId}/members`, {
+      method: "POST",
+      body: JSON.stringify(memberData),
+    });
+  },
+
+  updateWorkspaceMemberRole: async (
+    workspaceId: string,
+    userId: number,
+    roleData: { role: "admin" | "member" },
+  ) => {
+    return authFetch(`/workspaces/${workspaceId}/members/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(roleData),
+    });
+  },
+
+  removeWorkspaceMember: async (workspaceId: string, userId: number) => {
+    return authFetch(`/workspaces/${workspaceId}/members/${userId}`, {
+      method: "DELETE",
+    });
+  },
+
+  getWorkspaceBoards: async (workspaceId: string) => {
+    return authFetch(`/workspaces/${workspaceId}/boards`);
+  },
+
+  deleteWorkspaceBoard: async (workspaceId: string, boardId: number) => {
+    return authFetch(`/workspaces/${workspaceId}/boards/${boardId}`, {
+      method: "DELETE",
+    });
+  },
+
+  getWorkspaceActivities: async (workspaceId: string) => {
+    return authFetch(`/workspaces/${workspaceId}/activities`);
+  },
+
+  deleteWorkspace: async (workspaceId: string) => {
+    return authFetch(`/workspaces/${workspaceId}`, {
+      method: "DELETE",
     });
   },
 };

@@ -55,6 +55,23 @@ def ensure_legacy_schema_compatibility():
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE boards ADD COLUMN description VARCHAR"))
             print("Added missing column: boards.description")
+
+        workspace_columns = {column["name"] for column in inspector.get_columns("workspaces")}
+        if "description" not in workspace_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE workspaces ADD COLUMN description VARCHAR"))
+            print("Added missing column: workspaces.description")
+
+        if "icon" not in workspace_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE workspaces ADD COLUMN icon VARCHAR"))
+            print("Added missing column: workspaces.icon")
+
+        activity_columns = {column["name"] for column in inspector.get_columns("activities")}
+        if "workspace_id" not in activity_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE activities ADD COLUMN workspace_id INTEGER"))
+            print("Added missing column: activities.workspace_id")
     except Exception as exc:
         print(f"Schema compatibility check failed: {exc}")
 

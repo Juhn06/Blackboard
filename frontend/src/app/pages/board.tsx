@@ -1,4 +1,4 @@
-import {
+﻿import {
   useState,
   useEffect,
   useRef,
@@ -13,6 +13,7 @@ import {
   listsAPI,
   cardsAPI,
   commentsAPI,
+  boardNotesAPI,
   userAPI,
 } from "../services/api";
 import {
@@ -74,6 +75,14 @@ interface CardComment {
   created_at?: string | null;
   user_name?: string | null;
   user_email?: string | null;
+}
+
+interface BoardMessage {
+  id: number;
+  board_id: number;
+  user_id: number;
+  content: string;
+  created_at?: string | null;
 }
 
 interface BoardActivity {
@@ -166,7 +175,7 @@ export default function BoardPage() {
 
   // Use numeric boardId for comparisons with API responses
   const boardId = Number(id);
-  console.log("🔍 Current board ID:", boardId, "from route param:", id);
+  console.log("ðŸ” Current board ID:", boardId, "from route param:", id);
 
   const [board, setBoard] = useState<any>(null);
   const [lists, setLists] = useState<any[]>([]);
@@ -299,9 +308,9 @@ export default function BoardPage() {
     try {
       const listsData = await listsAPI.getListsByBoard(targetBoardId.toString());
       console.log("✅ Lists loaded from API:", listsData);
-      console.log("📋 First list structure:", listsData[0]);
+      console.log("ðŸ“‹ First list structure:", listsData[0]);
       setLists(listsData);
-      console.log("📋 Lists state updated with", listsData.length, "lists");
+      console.log("ðŸ“‹ Lists state updated with", listsData.length, "lists");
 
       const cardsByList = await Promise.all(
         listsData.map((list: any) =>
@@ -310,7 +319,7 @@ export default function BoardPage() {
       );
       const allCards: any[] = cardsByList.flat();
       console.log("✅ Cards loaded from API:", allCards.length, "total cards");
-      console.log("🃏 First card structure:", allCards[0]);
+      console.log("ðŸƒ First card structure:", allCards[0]);
       setCards(allCards);
       void loadCardMemberPreviews(allCards);
     } catch (error) {
@@ -319,7 +328,7 @@ export default function BoardPage() {
         alert(
           error instanceof Error
             ? error.message
-            : "Khong tai duoc du lieu board.",
+            : "Không tải được dữ liệu board.",
         );
       }
     }
@@ -337,7 +346,7 @@ export default function BoardPage() {
       }));
     } catch (error) {
       console.error("Failed to load card members:", error);
-      if (showLoading) alert(error instanceof Error ? error.message : "Khong tai duoc danh sach thanh vien cho the.");
+      if (showLoading) alert(error instanceof Error ? error.message : "Không tải được danh sách thành viên cho thẻ.");
     } finally {
       if (showLoading) setLoadingCardMembers(false);
     }
@@ -354,7 +363,7 @@ export default function BoardPage() {
       void loadBoardActivities(boardId, false);
     } catch (error) {
       console.error("Failed to add card member:", error);
-      alert(error instanceof Error ? error.message : "Khong them duoc thanh vien cho the.");
+      alert(error instanceof Error ? error.message : "Không thêm được thành viên cho thẻ.");
     }
   };
 
@@ -366,7 +375,7 @@ export default function BoardPage() {
       void loadBoardActivities(boardId, false);
     } catch (error) {
       console.error("Failed to remove card member:", error);
-      alert(error instanceof Error ? error.message : "Khong the xoa thanh vien.");
+      alert(error instanceof Error ? error.message : "Không thể xóa thành viên.");
     }
   };
 
@@ -396,7 +405,7 @@ export default function BoardPage() {
       console.log("Label created locally, boardLabels now:", boardLabels);
     } catch (error) {
       console.error("Failed to create label:", error);
-      alert(error instanceof Error ? error.message : "Khong tao duoc label.");
+      alert(error instanceof Error ? error.message : "Không tạo được nhãn.");
     }
   };
 
@@ -467,7 +476,7 @@ export default function BoardPage() {
       setCards((prev) => prev.map((c) => (Number(c.id) === Number(cardId) ? { ...c, labels } : c)));
     } catch (error) {
       console.error("Failed to remove label:", error);
-      alert(error instanceof Error ? error.message : "Khong xoa duoc label.");
+      alert(error instanceof Error ? error.message : "Không xóa được nhãn.");
     }
   };
 
@@ -490,7 +499,7 @@ export default function BoardPage() {
         alert(
           error instanceof Error
             ? error.message
-            : "Khong tai duoc danh sach thanh vien board.",
+            : "Không tải được danh sách thành viên board.",
         );
       }
     } finally {
@@ -521,6 +530,37 @@ export default function BoardPage() {
     } finally {
       if (showLoading) {
         setLoadingBoardActivities(false);
+      }
+    }
+  };
+
+  const loadBoardNotes = async (
+    targetBoardId: number,
+    showLoading: boolean = true,
+  ) => {
+    if (showLoading) {
+      setLoadingMessages(true);
+    }
+
+    try {
+      const notesData: BoardMessage[] = await boardNotesAPI.getNotesByBoard(
+        targetBoardId.toString(),
+      );
+      const normalized = Array.isArray(notesData) ? notesData : [];
+      normalized.sort(
+        (left, right) =>
+          (parseServerDate(left.created_at)?.getTime() ?? 0) -
+          (parseServerDate(right.created_at)?.getTime() ?? 0),
+      );
+      setMessages(normalized);
+    } catch (error) {
+      console.error("Failed to load board notes:", error);
+      if (showLoading) {
+        setMessages([]);
+      }
+    } finally {
+      if (showLoading) {
+        setLoadingMessages(false);
       }
     }
   };
@@ -571,7 +611,11 @@ export default function BoardPage() {
       try {
         const boardData = await boardsAPI.getBoard(boardId);
         setBoard(boardData);
-        await loadListsAndCards(boardId);
+        await Promise.all([
+          loadListsAndCards(boardId),
+          loadBoardNotes(boardId),
+        ]);
+        void loadBoardMembers(boardId, false);
       } catch (error) {
         console.error("Failed to load board data:", error);
       } finally {
@@ -594,28 +638,10 @@ export default function BoardPage() {
 
   // Polling effect moved below (needs to run after `showCardModal` is declared)
 
-  // State cho messages
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      user: "Admin",
-      text: "Chào mừng đến với bảng này!",
-      time: new Date("2026-04-03T09:00:00"),
-    },
-    {
-      id: 2,
-      user: "Nguyễn Văn A",
-      text: "Hôm nay chúng ta cần hoàn thành sprint planning",
-      time: new Date("2026-04-03T09:15:00"),
-    },
-    {
-      id: 3,
-      user: "Trần Thị B",
-      text: "Đã update design mới nhất vào Figma",
-      time: new Date("2026-04-03T10:30:00"),
-    },
-  ]);
-
+  // State cho messages (lưu ở backend qua board-notes API)
+  const [messages, setMessages] = useState<BoardMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
   const [activeDragCardId, setActiveDragCardId] = useState<number | null>(null);
@@ -706,6 +732,19 @@ export default function BoardPage() {
       window.clearInterval(intervalId);
     };
   }, [id, boardId, showCardModal]);
+
+  useEffect(() => {
+    if (!id || Number.isNaN(boardId)) return;
+    if (!showNotes) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadBoardNotes(boardId, false);
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [id, boardId, showNotes]);
 
   useEffect(() => {
     if (!showCardModal || !selectedCardData) {
@@ -832,7 +871,7 @@ export default function BoardPage() {
 
   const handleRemoveBoardMember = async (memberId: number) => {
     if (!isCurrentUserBoardAdmin) {
-      const message = "Chi admin moi duoc xoa thanh vien.";
+      const message = "Chỉ admin mới được xóa thành viên.";
       setBoardMenuError(message);
       setShareError(message);
       return;
@@ -842,7 +881,7 @@ export default function BoardPage() {
       (member) => Number(member.id) === Number(memberId),
     );
     if (targetMember && !canRemoveBoardMember(targetMember)) {
-      const message = "Khong the xoa admin cuoi cung hoac chu so huu board.";
+      const message = "Không thể xóa admin cuối cùng hoặc chủ sở hữu board.";
       setBoardMenuError(message);
       setShareError(message);
       return;
@@ -932,6 +971,11 @@ export default function BoardPage() {
   };
 
   const handleDeleteBoard = async () => {
+    if (!isCurrentUserBoardAdmin) {
+      setBoardMenuError("Chỉ admin mới được xóa board.");
+      return;
+    }
+
     if (!confirm("Bạn có chắc muốn xóa board này? Dữ liệu sẽ mất vĩnh viễn.")) {
       return;
     }
@@ -964,13 +1008,13 @@ export default function BoardPage() {
 
   const handleAddBoardMember = async () => {
     if (!isCurrentUserBoardAdmin) {
-      setShareError("Chi admin moi duoc them thanh vien.");
+      setShareError("Chỉ admin mới được thêm thành viên.");
       return;
     }
 
     const normalizedInput = shareMemberInput.trim();
     if (!normalizedInput) {
-      setShareError("Vui long nhap email hoac user ID.");
+      setShareError("Vui lòng nhập email hoặc user ID.");
       return;
     }
 
@@ -1002,7 +1046,7 @@ export default function BoardPage() {
       setShareError(
         error instanceof Error
           ? error.message
-          : "Khong the them thanh vien vao board.",
+          : "Không thể thêm thành viên vào board.",
       );
     } finally {
       setSharingMember(false);
@@ -1033,7 +1077,7 @@ export default function BoardPage() {
       alert(
         error instanceof Error
           ? error.message
-          : "Khong gui duoc binh luan. Vui long thu lai.",
+          : "Không gửi được bình luận. Vui lòng thử lại.",
       );
     } finally {
       setSendingComment(false);
@@ -1085,7 +1129,7 @@ export default function BoardPage() {
       card_member_added: "Thêm thành viên vào thẻ",
       card_member_removed: "Gỡ thành viên khỏi thẻ",
     };
-    dictionary.board_renamed = "Doi ten board";
+    dictionary.board_renamed = "Đổi tên board";
     dictionary.board_background_changed = "Doi background board";
     dictionary.card_deadline_updated = "Sua deadline the";
     return dictionary[action] || action.replaceAll("_", " ");
@@ -1360,6 +1404,14 @@ export default function BoardPage() {
     return null;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-purple-50">
+        <p className="text-gray-700">Đang tải bảng...</p>
+      </div>
+    );
+  }
+
   if (!board) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center">
@@ -1381,7 +1433,7 @@ export default function BoardPage() {
   /* const getCardsForList = (listId: string | number) => {
     const normalizedListId = Number(listId);
     return cards
-      `🃏 getCardsForList(${listId}): found ${filtered.length} cards`,
+      `ðŸƒ getCardsForList(${listId}): found ${filtered.length} cards`,
     );
     return filtered;
   }; */
@@ -1601,7 +1653,7 @@ export default function BoardPage() {
         alert(
           error instanceof Error
             ? error.message
-            : "Khong di chuyen duoc danh sach. Vui long thu lai.",
+            : "Không di chuyển được danh sách. Vui lòng thử lại.",
         );
       }
       return;
@@ -1686,7 +1738,7 @@ export default function BoardPage() {
       alert(
         error instanceof Error
           ? error.message
-          : "Khong di chuyen duoc the. Vui long thu lai.",
+          : "Không di chuyển được thẻ. Vui lòng thử lại.",
       );
     }
   };
@@ -1729,7 +1781,7 @@ export default function BoardPage() {
       // Update lists state with new list using functional update
       setLists((prevLists) => {
         const updated = [...prevLists, newList];
-        console.log("📋 Updated lists state:", updated);
+        console.log("ðŸ“‹ Updated lists state:", updated);
         return updated;
       });
 
@@ -1860,6 +1912,11 @@ export default function BoardPage() {
   };
 
   const handleDeleteList = async (listId: number) => {
+    if (!isCurrentUserBoardAdmin) {
+      alert("Chỉ admin mới được xóa danh sách.");
+      return;
+    }
+
     const targetList = boardLists.find(
       (listItem: any) => Number(listItem.id) === Number(listId),
     );
@@ -1891,12 +1948,12 @@ export default function BoardPage() {
   };
 
   const handleAddCard = async (listId: string) => {
-    console.log("🃏 handleAddCard called with listId:", listId);
-    console.log("🃏 newCardTitle:", newCardTitle);
+    console.log("ðŸƒ handleAddCard called with listId:", listId);
+    console.log("ðŸƒ newCardTitle:", newCardTitle);
 
     const normalizedCardTitle = newCardTitle.trim();
     if (!normalizedCardTitle) {
-      console.log("🃏 Title is empty, returning");
+      console.log("ðŸƒ Title is empty, returning");
       alert("Vui lòng nhập tiêu đề thẻ");
       return;
     }
@@ -1914,7 +1971,7 @@ export default function BoardPage() {
     }
 
     try {
-      console.log("🃏 Calling API with:", {
+      console.log("ðŸƒ Calling API with:", {
         title: normalizedCardTitle,
         list_id: parseInt(listId),
       });
@@ -1924,12 +1981,12 @@ export default function BoardPage() {
         list_id: parseInt(listId),
       });
 
-      console.log("🃏 API response:", newCard);
+      console.log("ðŸƒ API response:", newCard);
 
       // Update cards state with new card using functional update
       setCards((prevCards) => {
         const updated = [...prevCards, newCard];
-        console.log("🃏 Cards state updated, new length:", updated.length);
+        console.log("ðŸƒ Cards state updated, new length:", updated.length);
         return updated;
       });
 
@@ -1937,7 +1994,7 @@ export default function BoardPage() {
       setNewCardTitle("");
       setAddingCardToList(null);
       void loadBoardActivities(boardId, false);
-      console.log("🃏 Form reset and UI closed");
+      console.log("ðŸƒ Form reset and UI closed");
     } catch (error) {
       console.error("❌ Failed to create card:", error);
       alert(
@@ -2156,19 +2213,58 @@ export default function BoardPage() {
     }
   };
 
+  const resolveBoardMessageAuthor = (message: BoardMessage) => {
+    if (Number(message.user_id) === Number(currentUser?.id)) {
+      return currentUser?.name || currentUser?.email || "Bạn";
+    }
+
+    const member = boardMembers.find(
+      (boardMember) => Number(boardMember.id) === Number(message.user_id),
+    );
+    return (
+      member?.name ||
+      member?.email ||
+      `Người dùng #${Number(message.user_id)}`
+    );
+  };
+
+  const formatBoardMessageTime = (createdAt?: string | null) => {
+    const parsedDate = parseServerDate(createdAt);
+    if (!parsedDate) return "--:--";
+    return parsedDate.toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   // Hàm thêm message
-  const handleSendMessage = () => {
-    if (!newMessage.trim()) return;
+  const handleSendMessage = async () => {
+    const content = newMessage.trim();
+    if (!content || sendingMessage || Number.isNaN(boardId)) return;
 
-    const message = {
-      id: Date.now(),
-      user: "Nguyễn Văn A",
-      text: newMessage,
-      time: new Date(),
-    };
-
-    setMessages([...messages, message]);
-    setNewMessage("");
+    setSendingMessage(true);
+    try {
+      const createdMessage: BoardMessage = await boardNotesAPI.createNote({
+        board_id: boardId,
+        content,
+      });
+      setMessages((prev) => {
+        const merged = [...prev, createdMessage];
+        merged.sort(
+          (left, right) =>
+            (parseServerDate(left.created_at)?.getTime() ?? 0) -
+            (parseServerDate(right.created_at)?.getTime() ?? 0),
+        );
+        return merged;
+      });
+      setNewMessage("");
+      void loadBoardNotes(boardId, false);
+    } catch (error) {
+      console.error("Failed to send board message:", error);
+      alert(error instanceof Error ? error.message : "Không gửi được tin nhắn.");
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   // Lấy cards cho timeline theo giờ
@@ -2181,10 +2277,34 @@ export default function BoardPage() {
     year: "numeric",
   });
 
+  const isCardAssignedToCurrentUser = (card: any) => {
+    if (!Number.isFinite(currentUserId)) {
+      return false;
+    }
+
+    const numericCardId = Number(card?.id);
+    const members = Number.isFinite(numericCardId)
+      ? cardMembersByCardId[numericCardId] || []
+      : [];
+    const isCardMember = members.some(
+      (member) => Number(member.id) === Number(currentUserId),
+    );
+
+    const assigneeId = Number(card?.assignee_id ?? card?.assigneeId);
+    const isLegacyAssignee =
+      Number.isFinite(assigneeId) && assigneeId === Number(currentUserId);
+
+    return isCardMember || isLegacyAssignee;
+  };
+
   const todayTimelineCards = cards
     .filter((card: any) => {
       const { date, time } = splitDueDateTime(card);
-      return date === todayKey && !!normalizeTimeValue(time);
+      return (
+        date === todayKey &&
+        !!normalizeTimeValue(time) &&
+        isCardAssignedToCurrentUser(card)
+      );
     })
     .sort((a: any, b: any) => {
       const aMinutes = timeToMinutes(getDueTimeLabel(a)) ?? Number.MAX_SAFE_INTEGER;
@@ -2323,7 +2443,7 @@ export default function BoardPage() {
                 )}
                 {!canManageBoardMembers && (
                   <p className="text-xs text-gray-500">
-                    Chi admin moi duoc them hoac xoa thanh vien.
+                    Chỉ admin mới được thêm hoặc xóa thành viên.
                   </p>
                 )}
 
@@ -2506,25 +2626,32 @@ export default function BoardPage() {
 
             {/* Messages list */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className="bg-white/80 backdrop-blur rounded-lg p-3 shadow-sm"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-semibold text-gray-800">
-                      {message.user}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(message.time).toLocaleTimeString("vi-VN", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+              {loadingMessages ? (
+                <p className="text-sm text-gray-500">Đang tải tin nhắn...</p>
+              ) : messages.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  Chưa có trao đổi nào trong bảng này.
+                </p>
+              ) : (
+                messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className="bg-white/80 backdrop-blur rounded-lg p-3 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-semibold text-gray-800">
+                        {resolveBoardMessageAuthor(message)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {formatBoardMessageTime(message.created_at)}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {message.content}
+                    </p>
                   </div>
-                  <p className="text-sm text-gray-700">{message.text}</p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             {/* Input area */}
@@ -2535,19 +2662,23 @@ export default function BoardPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendMessage();
+                    void handleSendMessage();
                   }
                 }}
                 placeholder="Nhập tin nhắn..."
                 className="w-full px-3 py-2 bg-white/80 backdrop-blur border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-sm"
                 rows={3}
+                disabled={sendingMessage}
               />
               <button
-                onClick={handleSendMessage}
-                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                onClick={() => void handleSendMessage()}
+                disabled={sendingMessage || !newMessage.trim()}
+                className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send size={16} />
-                <span className="text-sm font-medium">Gửi</span>
+                <span className="text-sm font-medium">
+                  {sendingMessage ? "Đang gửi..." : "Gửi"}
+                </span>
               </button>
             </div>
           </div>
@@ -2587,7 +2718,7 @@ export default function BoardPage() {
               `}</style>
               {timelineSlotsWithCards.length === 0 && (
                 <div className="rounded-lg border border-dashed border-gray-300 bg-white/70 p-3 text-sm text-gray-600">
-                  {todayLabel}: chưa có công việc nào có deadline theo giờ.
+                  {todayLabel}: chưa có công việc nào của bạn có deadline theo giờ.
                 </div>
               )}
               {timelineSlotsWithCards.map((timeSlot) => {
@@ -2791,13 +2922,15 @@ export default function BoardPage() {
                                 >
                                   Di chuyển phải
                                 </button>
-                                <button
-                                  onClick={() => void handleDeleteList(listNumericId)}
-                                  disabled={processingListAction !== null}
-                                  className="w-full text-left px-3 py-2 text-sm rounded text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                >
-                                  Xóa danh sách
-                                </button>
+                                {isCurrentUserBoardAdmin && (
+                                  <button
+                                    onClick={() => void handleDeleteList(listNumericId)}
+                                    disabled={processingListAction !== null}
+                                    className="w-full text-left px-3 py-2 text-sm rounded text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                    Xóa danh sách
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -3143,7 +3276,7 @@ export default function BoardPage() {
                     disabled={sharingMember || !canManageBoardMembers}
                     className="px-4 py-2.5 bg-[#051836] text-white rounded-lg font-medium hover:bg-[#051836cc] transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {sharingMember ? "Dang them..." : "Thêm"}
+                    {sharingMember ? "Đang thêm..." : "Thêm"}
                   </button>
                 </div>
                 {shareError && (
@@ -3151,7 +3284,7 @@ export default function BoardPage() {
                 )}
                 {!canManageBoardMembers && (
                   <p className="mt-2 text-xs text-gray-500">
-                    Chi admin moi duoc them hoac xoa thanh vien.
+                    Chỉ admin mới được thêm hoặc xóa thành viên.
                   </p>
                 )}
               </div>
@@ -3442,7 +3575,7 @@ export default function BoardPage() {
                     value={cardDetailTitle}
                     onChange={(e) => setCardDetailTitle(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Nhap tieu de card"
+                    placeholder="Nhập tiêu đề card"
                   />
                 </div>
 
@@ -3598,7 +3731,7 @@ export default function BoardPage() {
                             className="inline-flex items-center gap-2 px-4 py-2 bg-[#051836] text-white rounded-lg font-medium hover:bg-[#051836cc] transition disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Send size={16} />
-                            {sendingComment ? "Dang gui..." : "Gui binh luan"}
+                            {sendingComment ? "Đang gửi..." : "Gửi bình luận"}
                           </button>
                         </div>
                       </div>
@@ -3784,33 +3917,35 @@ export default function BoardPage() {
                   >
                     Đóng
                   </button>
-                  <button
-                    onClick={async () => {
-                      if (!selectedCardId) return;
-                      if (!confirm("Bạn có chắc muốn xóa thẻ này?")) return;
-                      try {
-                        setDeletingCard(true);
-                        await cardsAPI.deleteCard(String(selectedCardId));
-                        // remove from local state
-                        setCards((prevCards) =>
-                          prevCards.filter(
-                            (card) => Number(card.id) !== Number(selectedCardId),
-                          ),
-                        );
-                        void loadBoardActivities(boardId, false);
-                        closeCardModal();
-                      } catch (error) {
-                        console.error("Failed to delete card:", error);
-                        alert(error instanceof Error ? error.message : "Xóa thẻ thất bại");
-                      } finally {
-                        setDeletingCard(false);
-                      }
-                    }}
-                    disabled={deletingCard}
-                    className="px-4 py-2 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {deletingCard ? "Đang xóa..." : "Xóa thẻ"}
-                  </button>
+                  {isCurrentUserBoardAdmin && (
+                    <button
+                      onClick={async () => {
+                        if (!selectedCardId) return;
+                        if (!confirm("Bạn có chắc muốn xóa thẻ này?")) return;
+                        try {
+                          setDeletingCard(true);
+                          await cardsAPI.deleteCard(String(selectedCardId));
+                          // remove from local state
+                          setCards((prevCards) =>
+                            prevCards.filter(
+                              (card) => Number(card.id) !== Number(selectedCardId),
+                            ),
+                          );
+                          void loadBoardActivities(boardId, false);
+                          closeCardModal();
+                        } catch (error) {
+                          console.error("Failed to delete card:", error);
+                          alert(error instanceof Error ? error.message : "Xóa thẻ thất bại");
+                        } finally {
+                          setDeletingCard(false);
+                        }
+                      }}
+                      disabled={deletingCard}
+                      className="px-4 py-2 border border-red-300 text-red-600 rounded-lg font-medium hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {deletingCard ? "Đang xóa..." : "Xóa thẻ"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -3819,3 +3954,6 @@ export default function BoardPage() {
     </div>
   );
 }
+
+
+
